@@ -77,9 +77,164 @@ public struct KRpcPackage
 
     public static KRpcPackage Decode(ReadOnlySpan<byte> buffer)
     {
-        return default;
+        using var result = Encoding.UTF8.GetString(buffer).GetEnumerator();
+        // decode
+        if (!result.MoveNext()) throw new FormatException("package format error");
+        var dic = BDecodeToMap(result);
+        // build package
+        if (!dic.TryGetValue("t", out var transactionId))
+        {
+            throw new FormatException("package format error");
+        }
+
+        if (!dic.TryGetValue("y", out var type))
+        {
+            throw new FormatException("package format error");
+        }
+
+        KRpcPackage package = new()
+        {
+            TransactionId = transactionId.ToString() ?? "",
+            Type = type.ToString() switch
+            {
+                "q" => KRpcTypes.Query,
+                "r" => KRpcTypes.Response,
+                "e" => KRpcTypes.Error,
+                _ => throw new FormatException("package format error")
+            }
+        };
+        switch (package.Type)
+        {
+            case KRpcTypes.Query:
+                if (!dic.TryGetValue("q", out var method))
+                {
+                    throw new FormatException("package format error");
+                }
+
+                if (!dic.TryGetValue("a", out var arguments) || arguments is not IDictionary<string, object> ad)
+                {
+                    throw new FormatException("package format error");
+                }
+
+                package.Query = new QueryPackage
+                {
+                    Method = method.ToString() ?? "",
+                    Arguments = ad
+                };
+                break;
+            case KRpcTypes.Response:
+                if (!dic.TryGetValue("r", out var response) || response is not IDictionary<string, object> r)
+                {
+                    throw new FormatException("package format error");
+                }
+
+                package.Response = r;
+                break;
+            case KRpcTypes.Error:
+                if (!dic.TryGetValue("e", out var error) || error is not ICollection<object> e)
+                {
+                    throw new FormatException("package format error");
+                }
+
+                if (e.Count < 2)
+                {
+                    throw new FormatException("package format error");
+                }
+
+                var array = e.ToArray();
+                package.Error = ((int)array[0], array[1].ToString() ?? "");
+
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(null, "Type Unknown");
+        }
+
+        return package;
     }
 
+    private static Dictionary<string, object> BDecodeToMap(CharEnumerator chars)
+    {
+        if (chars.Current != 'd') throw new FormatException("can not convert to map");
+        var dictionary = new Dictionary<string, object>();
+        while (chars.MoveNext() && chars.Current != 'e')
+        {
+            var key = BDecodeToString(chars);
+            if (!chars.MoveNext())
+            {
+                dictionary[key] = "";
+                break;
+            }
+
+            dictionary[key] = chars.Current switch
+            {
+                'i' => BDecodeToInteger(chars),
+                'l' => BDecodeToList(chars),
+                'd' => BDecodeToMap(chars),
+                _ => BDecodeToString(chars)
+            };
+        }
+
+        return dictionary;
+    }
+
+    private static List<object> BDecodeToList(CharEnumerator chars)
+    {
+        if (chars.Current != 'l') throw new FormatException("can not convert to list");
+        List<object> result = [];
+        while (chars.MoveNext() && chars.Current != 'e')
+        {
+            result.Add(chars.Current switch
+            {
+                'i' => BDecodeToInteger(chars),
+                'l' => BDecodeToList(chars),
+                'd' => BDecodeToMap(chars),
+                _ => BDecodeToString(chars)
+            });
+        }
+
+        return result;
+    }
+
+    private static string BDecodeToString(CharEnumerator chars)
+    {
+        StringBuilder lengthStr = new();
+        do
+        {
+            lengthStr.Append(chars.Current);
+        } while (chars.MoveNext() && chars.Current != ':');
+
+        if (!int.TryParse(lengthStr.ToString(), out var length))
+        {
+            throw new FormatException("string format error");
+        }
+
+        StringBuilder s = new();
+        while (length > 0 && chars.MoveNext())
+        {
+            s.Append(chars.Current);
+            length--;
+        }
+
+        if (length > 0) throw new FormatException("string length error");
+        return s.ToString();
+    }
+
+    private static int BDecodeToInteger(CharEnumerator chars)
+    {
+        if (chars.Current != 'i') throw new FormatException("can not convert to integer");
+        StringBuilder number = new();
+        while (chars.MoveNext() && chars.Current != 'e')
+        {
+            number.Append(chars.Current);
+        }
+
+        if (int.TryParse(number.ToString(), out var i))
+        {
+            throw new FormatException("can not convert to integer");
+        }
+
+        return i;
+    }
 
     private static string BEncode(int number)
     {
@@ -126,7 +281,7 @@ public struct KRpcPackage
             string str => BEncode(str),
             ICollection<object> list => BEncode(list),
             IDictionary<string, object> iDic => BEncode(iDic),
-            _ => ""
+            _ => throw new ArgumentOutOfRangeException(nameof(o), "unknown type")
         };
     }
 }

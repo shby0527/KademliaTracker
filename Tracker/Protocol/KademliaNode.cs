@@ -47,21 +47,7 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
 
     private void Initial()
     {
-        KRpcPackage package = new()
-        {
-            TransactionId = "cadga",
-            Type = KRpcTypes.Query,
-            Query = new QueryPackage
-            {
-                Method = "ping",
-                Arguments = new Dictionary<string, object>
-                {
-                    { "id", "cadsgfagracasdf" }
-                }
-            }
-        };
-        var encode = package.Encode();
-        _logger.LogTrace("test package encoded {e}", Encoding.UTF8.GetString(encode));
+        
     }
 
     private void BeginReceive()
