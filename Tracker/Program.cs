@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using NLog;
 using NLog.Extensions.Logging;
 using Umi.Dht.Client.Attributes;
+using Umi.Dht.Client.Configurations;
 using Umi.Dht.Client.Interceptors;
 using LogLevel = NLog.LogLevel;
 
@@ -52,6 +53,11 @@ public static class Program
 
         //注册配置文件字段
         services.AddOptions();
+
+        services.AddHttpClient("default",
+            client => client.DefaultRequestHeaders.Add("User-Agent", "Umi Dht Tracker"));
+
+        services.Configure<KademliaConfig>(context.Configuration.GetSection("Kademlia"));
     }
 
     private static Action<HostBuilderContext, ILoggingBuilder> ConfigurationLoggingBuilder(LogFactory factory)
