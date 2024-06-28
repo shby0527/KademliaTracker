@@ -45,6 +45,9 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
             _logger.LogInformation("close");
             return;
         }
+
+        // receive next package
+        this.BeginReceive();
     }
 
     public void Stop()

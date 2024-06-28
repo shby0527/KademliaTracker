@@ -20,8 +20,7 @@ public class TimeLoggerInterceptor(ILogger<TimeLoggerInterceptor> logger) : IInt
         finally
         {
             sw.Stop();
-            logger.LogDebug("{fullName}.{name} running finished, using {time} ",
-                invocation.TargetType.FullName,
+            logger.LogDebug("{name} running finished, using {time} ",
                 invocation.MethodInvocationTarget.Name,
                 sw.Elapsed.ToString("c"));
         }

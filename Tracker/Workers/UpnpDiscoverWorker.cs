@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -15,6 +16,7 @@ namespace Umi.Dht.Client.Workers;
 public class UpnpDiscoverWorker(
     ILogger<UpnpDiscoverWorker> logger,
     IOptions<KademliaConfig> kademliaConfig,
+    IConfiguration configuration,
     IHttpClientFactory httpClientFactory) : BackgroundService
 {
     private const int MAX_PACK_SIZE = 0x10000;
@@ -28,7 +30,8 @@ public class UpnpDiscoverWorker(
         logger.LogTrace("begin discover UPnP Device");
         Memory<byte> buffer = new byte[MAX_PACK_SIZE];
         var remoteGroup = new IPEndPoint(IPAddress.Parse("239.255.255.250"), 1900);
-        var local = GetLocalAddress();
+        var cla = configuration.GetValue<string>("LocalAddress");
+        var local = string.IsNullOrEmpty(cla) ? GetLocalAddress() : IPAddress.Parse(cla);
         logger.LogTrace("found local ip address is {ip}", local);
         MulticastOption option = new(remoteGroup.Address, local);
         _socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.AddMembership, option);
@@ -102,7 +105,8 @@ public class UpnpDiscoverWorker(
             logger.LogTrace("upnp status code {code}", response!.Code);
             if (response!.Code == HttpStatusCode.OK)
             {
-                logger.LogInformation("response from server {server}", response!.Headers.GetValues("SERVER")?[0] ?? "");
+                logger.LogInformation("found upnp device response from server {server}",
+                    response!.Headers.GetValues("SERVER")?[0] ?? "");
                 // getLocation
                 var values = response!.Headers.GetValues("LOCATION");
                 if (values != null)
