@@ -47,7 +47,7 @@ public class UpnpDiscoverWorker(
         const string discoverPackage =
             "M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN:\"ssdp:discover\"\r\nMX:3\r\nST:upnp:rootdevice\r\n";
         logger.LogTrace("sending discover package {p}", discoverPackage);
-        var sendByte = _socket.SendTo(Encoding.ASCII.GetBytes(discoverPackage), remoteGroup);
+        var sendByte = _socket.SendTo(Encoding.UTF8.GetBytes(discoverPackage), remoteGroup);
         logger.LogTrace("send bytes {s}", sendByte);
         return Task.CompletedTask;
     }
@@ -98,7 +98,7 @@ public class UpnpDiscoverWorker(
         }
 
         var content = args.MemoryBuffer[..args.BytesTransferred];
-        var result = Encoding.ASCII.GetString(content.Span);
+        var result = Encoding.UTF8.GetString(content.Span);
         logger.LogTrace("result is: {result}", result);
         if (UPnPResponse.TryParse(result, out var response))
         {

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Umi.Dht.Client.Configurations;
@@ -16,7 +17,13 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
 
     private readonly SocketAsyncEventArgs _receivedEventArgs = new();
 
+    private readonly KBucket[] _buckets = new KBucket[160];
+
     private const int MAX_PACK_SIZE = 0x10000;
+
+    private const int MAX_SPLIT_NODE = 20;
+
+    private int _splitedBucket = 0;
 
     public void Start()
     {
@@ -27,6 +34,34 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
         var endpoint = new IPEndPoint(IPAddress.Any, config.Port);
         _socket.Bind(endpoint);
         this.BeginReceive();
+        _logger.LogTrace("initial KBucket");
+        _buckets[0] = new KBucket
+        {
+            BucketDistance = 0,
+            Nodes = new Queue<NodeInfo>(),
+            Split = false
+        };
+        ThreadPool.QueueUserWorkItem(_ => this.Initial());
+    }
+
+
+    private void Initial()
+    {
+        KRpcPackage package = new()
+        {
+            TransactionId = "cadga",
+            Type = KRpcTypes.Query,
+            Query = new QueryPackage
+            {
+                Method = "ping",
+                Arguments = new Dictionary<string, object>
+                {
+                    { "id", "cadsgfagracasdf" }
+                }
+            }
+        };
+        var encode = package.Encode();
+        _logger.LogTrace("test package encoded {e}", Encoding.UTF8.GetString(encode));
     }
 
     private void BeginReceive()
