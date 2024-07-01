@@ -1,4 +1,5 @@
 using System.Collections.Specialized;
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 
 namespace Umi.Dht.Client.UPnP;
@@ -11,7 +12,7 @@ public class UPnPResponse
 
     public NameValueCollection Headers { get; private set; } = [];
 
-    public static bool TryParse(string result, out UPnPResponse? response)
+    public static bool TryParse(string result, [MaybeNullWhen(false)] out UPnPResponse response)
     {
         response = null;
         using var reader = new StringReader(result);
@@ -20,11 +21,12 @@ public class UPnPResponse
         if (!firstLine.StartsWith("HTTP")) return false;
         var h = firstLine.Split();
         if (h.Length < 3) return false;
-        response = new UPnPResponse();
-        response.Version = Version.Parse(h[0].Replace("HTTP/", ""));
-        response.Code = (HttpStatusCode)int.Parse((string)h[1]);
-        string? next = null;
-        while ((next = reader.ReadLine()) != null)
+        response = new UPnPResponse
+        {
+            Version = Version.Parse(h[0].Replace("HTTP/", "")),
+            Code = (HttpStatusCode)int.Parse((string)h[1])
+        };
+        while (reader.ReadLine() is { } next)
         {
             if (string.IsNullOrEmpty(next)) continue;
             var split = next.IndexOf(':');

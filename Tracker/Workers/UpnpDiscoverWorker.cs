@@ -70,6 +70,7 @@ public class UpnpDiscoverWorker(
                     OperationalStatus: OperationalStatus.Up
                 }) continue;
             var ipProperties = nif.GetIPProperties();
+            
             var addresses = ipProperties.UnicastAddresses;
             foreach (var address in addresses)
             {
@@ -102,13 +103,13 @@ public class UpnpDiscoverWorker(
         logger.LogTrace("result is: {result}", result);
         if (UPnPResponse.TryParse(result, out var response))
         {
-            logger.LogTrace("upnp status code {code}", response!.Code);
-            if (response!.Code == HttpStatusCode.OK)
+            logger.LogTrace("upnp status code {code}", response.Code);
+            if (response.Code == HttpStatusCode.OK)
             {
                 logger.LogInformation("found upnp device response from server {server}",
-                    response!.Headers.GetValues("SERVER")?[0] ?? "");
+                    response.Headers.GetValues("SERVER")?[0] ?? "");
                 // getLocation
-                var values = response!.Headers.GetValues("LOCATION");
+                var values = response.Headers.GetValues("LOCATION");
                 if (values != null)
                 {
                     this.TakeUPnPXml(values[0])

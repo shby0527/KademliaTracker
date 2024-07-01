@@ -8,32 +8,34 @@ namespace Umi.Dht.Client.Protocol;
 /// <summary>
 /// K-RPC 协议格式 
 /// </summary>
-public struct KRpcPackage
+public struct KRpcPackage()
 {
+    public DateTimeOffset CreateTime { get; } = DateTimeOffset.Now;
+
     /// <summary>
     /// transaction Id ，事务ID，响应的相关请求的ID
     /// </summary>
-    public string TransactionId { get; init; }
+    public required string TransactionId { get; init; }
 
     /// <summary>
     /// 响应类型, 每个类型对应下面任意一个字段
     /// </summary>
-    public KRpcTypes Type { get; init; }
+    public KRpcTypes Type { get; init; } = KRpcTypes.Query;
 
     /// <summary>
     /// t = q
     /// </summary>
-    public QueryPackage? Query { get; set; }
+    public QueryPackage? Query { get; set; } = null;
 
     /// <summary>
     /// r
     /// </summary>
-    public IDictionary<string, object>? Response { get; set; }
+    public IDictionary<string, object>? Response { get; set; } = null;
 
     /// <summary>
     /// e, list
     /// </summary>
-    public (int Code, string Message)? Error { get; set; }
+    public (int Code, string Message)? Error { get; set; } = null;
 
     public ReadOnlySpan<byte> Encode()
     {
@@ -72,12 +74,12 @@ public struct KRpcPackage
                 throw new ArgumentOutOfRangeException();
         }
 
-        return Encoding.UTF8.GetBytes(BEncode(package));
+        return Encoding.ASCII.GetBytes(BEncode(package));
     }
 
     public static KRpcPackage Decode(ReadOnlySpan<byte> buffer)
     {
-        using var result = Encoding.UTF8.GetString(buffer).GetEnumerator();
+        using var result = Encoding.ASCII.GetString(buffer).GetEnumerator();
         // decode
         if (!result.MoveNext()) throw new FormatException("package format error");
         var dic = BDecodeToMap(result);
