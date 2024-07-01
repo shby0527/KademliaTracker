@@ -25,8 +25,8 @@ public static class KademliaProtocols
                 Method = "find_node",
                 Arguments = new Dictionary<string, object>
                 {
-                    { "id", Encoding.ASCII.GetString(id) },
-                    { "target", Encoding.ASCII.GetString(target) }
+                    { "id", new ReadOnlyMemory<byte>(id.ToArray()) },
+                    { "target", new ReadOnlyMemory<byte>(target.ToArray()) }
                 }
             }
         };
@@ -49,7 +49,7 @@ public static class KademliaProtocols
                 Method = "ping",
                 Arguments = new Dictionary<string, object>
                 {
-                    { "id", Encoding.ASCII.GetString(id) },
+                    { "id", new ReadOnlyMemory<byte>(id.ToArray()) }
                 }
             }
         };

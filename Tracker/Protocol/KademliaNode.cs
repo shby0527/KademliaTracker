@@ -138,7 +138,7 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
         sender._logger.LogTrace("begin process find_node, transaction: {tr}", request.TransactionId);
         var dictionary = response.Response;
         // found node response
-        ReadOnlySpan<byte> id = Encoding.ASCII.GetBytes((string)dictionary["id"]);
+        ReadOnlySpan<byte> id = (byte[])dictionary["id"];
         // first, add k-bucket this first node for
         var distance = KBucket.ComputeDistances(id, sender.CLIENT_NODE_ID.Span);
         if (sender._buckets.Count > distance)
@@ -171,9 +171,19 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
             }
         }
 
-        ReadOnlySpan<byte> nodes = Encoding.ASCII.GetBytes((string)dictionary["nodes"]);
+        ReadOnlySpan<byte> nodes = (byte[])dictionary["nodes"];
+        var nodeCount = nodes.Length / 26;
+        sender._logger.LogTrace("found {count} nodes", nodeCount);
+        for (var i = 0; i < nodes.Length; i += 26)
+        {
+            var item = nodes[i..(i + 26)];
+            // node id is
+            var itemId = item[..20];
+            var itemIP = new IPAddress(item[20..24]);
+            var port = new BigInteger(item[24..26], true, true);
+            sender._logger.LogTrace("received node ID:{id}, IP: {ip}, port: {port} ", itemId.ToArray(), itemIP, port);
+        }
     }
-
 
     private void CheckPackageALive()
     {

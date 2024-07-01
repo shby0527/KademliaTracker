@@ -10,6 +10,27 @@ namespace Umi.Dht.Client.Protocol;
 /// </summary>
 public struct KRpcPackage()
 {
+    private static readonly byte I;
+
+    private static readonly byte D;
+
+    private static readonly byte L;
+
+    private static readonly byte E;
+
+    private static readonly byte SPM;
+
+    static KRpcPackage()
+    {
+        var bytes = "idle:"u8.ToArray();
+        I = bytes[0];
+        D = bytes[1];
+        L = bytes[2];
+        E = bytes[3];
+        SPM = bytes[4];
+    }
+
+
     public DateTimeOffset CreateTime { get; } = DateTimeOffset.Now;
 
     /// <summary>
@@ -74,15 +95,15 @@ public struct KRpcPackage()
                 throw new ArgumentOutOfRangeException();
         }
 
-        return Encoding.ASCII.GetBytes(BEncode(package));
+        return BEncode(package);
     }
 
     public static KRpcPackage Decode(ReadOnlySpan<byte> buffer)
     {
-        using var result = Encoding.ASCII.GetString(buffer).GetEnumerator();
+        var result = buffer.GetEnumerator();
         // decode
         if (!result.MoveNext()) throw new FormatException("package format error");
-        var dic = BDecodeToMap(result);
+        var dic = BDecodeToMap(ref result);
         // build package
         if (!dic.TryGetValue("t", out var transactionId))
         {
@@ -96,8 +117,8 @@ public struct KRpcPackage()
 
         KRpcPackage package = new()
         {
-            TransactionId = transactionId.ToString() ?? "",
-            Type = type.ToString() switch
+            TransactionId = Encoding.ASCII.GetString((byte[])transactionId),
+            Type = Encoding.ASCII.GetString((byte[])type)switch
             {
                 "q" => KRpcTypes.Query,
                 "r" => KRpcTypes.Response,
@@ -120,7 +141,7 @@ public struct KRpcPackage()
 
                 package.Query = new QueryPackage
                 {
-                    Method = method.ToString() ?? "",
+                    Method = Encoding.ASCII.GetString((byte[])method) ?? "",
                     Arguments = ad
                 };
                 break;
@@ -144,7 +165,7 @@ public struct KRpcPackage()
                 }
 
                 var array = e.ToArray();
-                package.Error = ((int)array[0], array[1].ToString() ?? "");
+                package.Error = ((int)array[0], Encoding.ASCII.GetString((byte[])array[1]) ?? "");
 
                 break;
             default:
@@ -154,80 +175,98 @@ public struct KRpcPackage()
         return package;
     }
 
-    private static Dictionary<string, object> BDecodeToMap(CharEnumerator chars)
+    private static Dictionary<string, object> BDecodeToMap(ref ReadOnlySpan<byte>.Enumerator chars)
     {
-        if (chars.Current != 'd') throw new FormatException("can not convert to map");
+        if (chars.Current != D) throw new FormatException("can not convert to map");
         var dictionary = new Dictionary<string, object>();
-        while (chars.MoveNext() && chars.Current != 'e')
+        while (chars.MoveNext() && chars.Current != E)
         {
-            var key = BDecodeToString(chars);
+            var key = Encoding.ASCII.GetString(BDecodeToString(ref chars));
             if (!chars.MoveNext())
             {
                 dictionary[key] = "";
                 break;
             }
 
-            dictionary[key] = chars.Current switch
+            if (chars.Current == I)
             {
-                'i' => BDecodeToInteger(chars),
-                'l' => BDecodeToList(chars),
-                'd' => BDecodeToMap(chars),
-                _ => BDecodeToString(chars)
-            };
+                dictionary[key] = BDecodeToInteger(ref chars);
+            }
+            else if (chars.Current == L)
+            {
+                dictionary[key] = BDecodeToList(ref chars);
+            }
+            else if (chars.Current == D)
+            {
+                dictionary[key] = BDecodeToMap(ref chars);
+            }
+            else
+            {
+                dictionary[key] = BDecodeToString(ref chars).ToArray();
+            }
         }
 
         return dictionary;
     }
 
-    private static List<object> BDecodeToList(CharEnumerator chars)
+    private static List<object> BDecodeToList(ref ReadOnlySpan<byte>.Enumerator chars)
     {
-        if (chars.Current != 'l') throw new FormatException("can not convert to list");
+        if (chars.Current != L) throw new FormatException("can not convert to list");
         List<object> result = [];
-        while (chars.MoveNext() && chars.Current != 'e')
+        while (chars.MoveNext() && chars.Current != E)
         {
-            result.Add(chars.Current switch
+            if (chars.Current == I)
             {
-                'i' => BDecodeToInteger(chars),
-                'l' => BDecodeToList(chars),
-                'd' => BDecodeToMap(chars),
-                _ => BDecodeToString(chars)
-            });
+                result.Add(BDecodeToInteger(ref chars));
+            }
+            else if (chars.Current == L)
+            {
+                result.Add(BDecodeToList(ref chars));
+            }
+            else if (chars.Current == D)
+            {
+                result.Add(BDecodeToMap(ref chars));
+            }
+            else
+            {
+                result.Add(BDecodeToString(ref chars).ToString());
+            }
         }
 
         return result;
     }
 
-    private static string BDecodeToString(CharEnumerator chars)
+    private static ReadOnlySpan<byte> BDecodeToString(ref ReadOnlySpan<byte>.Enumerator chars)
     {
         StringBuilder lengthStr = new();
         do
         {
-            lengthStr.Append(chars.Current);
-        } while (chars.MoveNext() && chars.Current != ':');
+            lengthStr.Append(Encoding.ASCII.GetString([chars.Current]));
+        } while (chars.MoveNext() && chars.Current != SPM);
 
         if (!int.TryParse(lengthStr.ToString(), out var length))
         {
             throw new FormatException("string format error");
         }
 
-        StringBuilder s = new();
+        List<byte> bytes = [];
         while (length > 0 && chars.MoveNext())
         {
-            s.Append(chars.Current);
+            bytes.Add(chars.Current);
             length--;
         }
 
         if (length > 0) throw new FormatException("string length error");
-        return s.ToString();
+        return bytes.ToArray();
     }
 
-    private static int BDecodeToInteger(CharEnumerator chars)
+    private static int BDecodeToInteger(ref ReadOnlySpan<byte>.Enumerator chars)
     {
-        if (chars.Current != 'i') throw new FormatException("can not convert to integer");
+        if (chars.Current != I) throw new FormatException("can not convert to integer");
         StringBuilder number = new();
-        while (chars.MoveNext() && chars.Current != 'e')
+        while (chars.MoveNext() && chars.Current != E)
         {
-            number.Append(chars.Current);
+            number.Append(Encoding.ASCII.GetString([chars.Current]));
         }
 
         if (int.TryParse(number.ToString(), out var i))
@@ -238,49 +277,51 @@ public struct KRpcPackage()
         return i;
     }
 
-    private static string BEncode(int number)
+    private static ReadOnlySpan<byte> BEncode(int number)
     {
-        return $"i{number}e";
+        return Encoding.ASCII.GetBytes($"i{number}e");
     }
 
-    private static string BEncode(string str)
+    private static ReadOnlySpan<byte> BEncode(ReadOnlySpan<byte> str)
     {
-        return $"{str.Length}:{str}";
+        List<byte> s = [];
+        s.AddRange(Encoding.ASCII.GetBytes($"{str.Length}:"));
+        s.AddRange(str);
+        return s.ToArray();
     }
 
-    private static string BEncode(IDictionary<string, object> dic)
+    private static ReadOnlySpan<byte> BEncode(IDictionary<string, object> dic)
     {
-        var sb = new StringBuilder();
-        sb.Append('d');
+        List<byte> sb = [D];
         foreach (var item in dic.ToImmutableSortedDictionary(StringComparer.Ordinal))
         {
-            sb.Append(BEncode(item.Key));
-            sb.Append(BEncodeTypeMap(item.Value));
+            sb.AddRange(BEncode(Encoding.ASCII.GetBytes(item.Key)));
+            sb.AddRange(BEncodeTypeMap(item.Value));
         }
 
-        sb.Append('e');
-        return sb.ToString();
+        sb.Add(E);
+        return sb.ToArray();
     }
 
-    private static string BEncode(ICollection<object> list)
+    private static ReadOnlySpan<byte> BEncode(ICollection<object> list)
     {
-        var sb = new StringBuilder();
-        sb.Append('l');
+        List<byte> sb = [L];
         foreach (var o in list)
         {
-            sb.Append(BEncodeTypeMap(o));
+            sb.AddRange(BEncodeTypeMap(o));
         }
 
-        sb.Append('e');
-        return sb.ToString();
+        sb.Add(E);
+        return sb.ToArray();
     }
 
-    private static string BEncodeTypeMap(object o)
+    private static ReadOnlySpan<byte> BEncodeTypeMap(object o)
     {
         return o switch
         {
             int value => BEncode(value),
-            string str => BEncode(str),
+            string str => BEncode(Encoding.ASCII.GetBytes(str)),
+            ReadOnlyMemory<byte> b => BEncode(b.Span),
             ICollection<object> list => BEncode(list),
             IDictionary<string, object> iDic => BEncode(iDic),
             _ => throw new ArgumentOutOfRangeException(nameof(o), "unknown type")
