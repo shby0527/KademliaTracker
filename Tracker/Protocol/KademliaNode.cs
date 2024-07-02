@@ -32,6 +32,16 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
             { "ping", OnPingResponse }
         }.ToImmutableDictionary();
 
+
+    private readonly ImmutableDictionary<string, Action<KademliaNode, KRpcPackage, EndPoint>> _eventRequestMap
+        = new Dictionary<string, Action<KademliaNode, KRpcPackage, EndPoint>>()
+        {
+            { "get_peers", OnGetPeersRequest },
+            { "announce_peer", OnAnnouncePeerRequest },
+            { "ping", OnPingRequest },
+            { "find_node", OnFindNodeRequest }
+        }.ToImmutableDictionary();
+
     private Timer? _timer;
 
     public void Start()
@@ -95,24 +105,39 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
             _logger.LogTrace("received package {page}， Type: {type}, from {from}",
                 package, package.Type, args.RemoteEndPoint);
 
-            // found request package
-            if (package is { Type: KRpcTypes.Response } &&
-                _packages.TryGetValue(package.FormattedTransaction, out var request))
+            switch (package)
             {
-                _packages.Remove(request.FormattedTransaction, out _);
-                if (_eventMap.TryGetValue(request.Query?.Method ?? "", out var action))
+                // found request package
+                case { Type: KRpcTypes.Response } when
+                    _packages.TryGetValue(package.FormattedTransaction, out var request):
                 {
-                    action(this, request, package, args.RemoteEndPoint!);
+                    _packages.Remove(request.FormattedTransaction, out _);
+                    if (_eventMap.TryGetValue(request.Query?.Method ?? "", out var action))
+                    {
+                        action(this, request, package, args.RemoteEndPoint!);
+                    }
+                    else
+                    {
+                        _logger.LogTrace("unsupported operator");
+                    }
+
+                    break;
                 }
-                else
-                {
-                    _logger.LogTrace("unsupported operator");
-                }
-            }
-            else
-            {
-                _logger.LogDebug("unable found request package, maybe time out, transaction {t}",
-                    package.FormattedTransaction);
+                case { Type: KRpcTypes.Query, Query: not null }:
+                    if (_eventRequestMap.TryGetValue(package.Query.Value.Method, out var requestProcess))
+                    {
+                        requestProcess(this, package, args.RemoteEndPoint!);
+                    }
+                    else
+                    {
+                        _logger.LogTrace("unsupported request operator");
+                    }
+
+                    break;
+                default:
+                    _logger.LogDebug("unable found request package, maybe time out, transaction {t}",
+                        package.FormattedTransaction);
+                    break;
             }
         }
         catch (Exception e)
@@ -139,6 +164,85 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
             node.LatestAccessTime = DateTimeOffset.Now;
         }
     }
+
+    private static void OnGetPeersRequest(KademliaNode sender,
+        KRpcPackage request, EndPoint remote)
+    {
+        var logger = sender._logger;
+        logger.LogTrace("get peers request");
+        // TODO: 这里可以获取到 btih, 但是也需要正常返回 peer罗辑
+    }
+
+    private static void OnAnnouncePeerRequest(KademliaNode sender,
+        KRpcPackage request, EndPoint remote)
+    {
+        var logger = sender._logger;
+        logger.LogTrace("announce peer request");
+
+        // TODO: 这里可以直接获取到 btih, 表示该peer正在下载的peer, 需要保存，get peer 的时候需要用
+    }
+
+    private static void OnFindNodeRequest(KademliaNode sender,
+        KRpcPackage request, EndPoint remote)
+    {
+        var logger = sender._logger;
+        logger.LogTrace("find node request");
+        if (remote is not IPEndPoint ip) return;
+        var arguments = request.Query!.Value.Arguments;
+        ReadOnlySpan<byte> nodeId = (byte[])arguments["id"];
+        ReadOnlySpan<byte> target = (byte[])arguments["target"];
+        if (sender._kRouter.TryFoundNode(nodeId, out var node))
+        {
+            node.LatestAccessTime = DateTimeOffset.Now;
+        }
+        else
+        {
+            sender._kRouter.AddNode(new NodeInfo
+            {
+                NodeID = nodeId.ToArray(),
+                Distance = KBucket.ComputeDistances(nodeId, sender.CLIENT_NODE_ID.Span),
+                NodeAddress = ip.Address,
+                NodePort = ip.Port,
+                LatestAccessTime = DateTimeOffset.Now
+            });
+        }
+
+        // find node request, response distance max top 8
+        var list = sender._kRouter.FindNodeList(target);
+        List<byte> nodes = [];
+        foreach (var info in list)
+        {
+            // nodeid,
+            nodes.AddRange(info.NodeID.Span);
+            // ip
+            nodes.AddRange(info.NodeAddress.GetAddressBytes());
+            BigInteger port = info.NodePort;
+            // port
+            nodes.AddRange(port.ToByteArray(true, true));
+        }
+
+        sender.SendPackage(ip,
+            KademliaProtocols.FindNodeResponse(sender.CLIENT_NODE_ID.Span,
+                nodes.ToArray(), request.TransactionId));
+    }
+
+    private static void OnPingRequest(KademliaNode sender,
+        KRpcPackage request, EndPoint remote)
+    {
+        var logger = sender._logger;
+        logger.LogTrace("ping request");
+        if (remote is not IPEndPoint ip) return;
+        var arguments = request.Query!.Value.Arguments;
+        ReadOnlySpan<byte> id = (byte[])arguments["id"];
+        if (sender._kRouter.TryFoundNode(id, out var node))
+        {
+            node.LatestAccessTime = DateTimeOffset.Now;
+        }
+
+        logger.LogTrace("ping response, transaction {tr}", request.FormattedTransaction);
+        sender.SendPackage(ip, KademliaProtocols.PingResponse(sender.CLIENT_NODE_ID.Span, request.TransactionId));
+    }
+
 
     private static void OnFindNodeResponse(KademliaNode sender,
         KRpcPackage request, KRpcPackage response,

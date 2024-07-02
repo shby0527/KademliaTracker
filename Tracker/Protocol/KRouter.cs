@@ -123,6 +123,15 @@ public class KRouter
         return info != null;
     }
 
+    public IEnumerable<NodeInfo> FindNodeList(ReadOnlySpan<byte> target)
+    {
+        var distances = KBucket.ComputeDistances(target, _currentNode.Span);
+        var bucket = this.FindNestDistanceBucket(KBucket.PrefixLength(distances));
+        return bucket.Nodes
+            .Take(8)
+            .ToArray();
+    }
+
 
     public long PeersCount
     {

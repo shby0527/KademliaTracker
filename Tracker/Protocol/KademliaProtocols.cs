@@ -53,4 +53,34 @@ public static class KademliaProtocols
             }
         };
     }
+
+    public static KRpcPackage PingResponse(ReadOnlySpan<byte> id, ReadOnlySpan<byte> transactionId)
+    {
+        return new KRpcPackage
+        {
+            Type = KRpcTypes.Response,
+            TransactionId = transactionId.ToArray(),
+            Response = new Dictionary<string, object>
+            {
+                { "id", id.ToArray() }
+            }
+        };
+    }
+
+
+    public static KRpcPackage FindNodeResponse(ReadOnlySpan<byte> id,
+        ReadOnlySpan<byte> nodes,
+        ReadOnlySpan<byte> transactionId)
+    {
+        return new KRpcPackage
+        {
+            Type = KRpcTypes.Response,
+            TransactionId = transactionId.ToArray(),
+            Response = new Dictionary<string, object>
+            {
+                { "id", id.ToArray() },
+                { "nodes", nodes.ToArray() }
+            }
+        };
+    }
 }
