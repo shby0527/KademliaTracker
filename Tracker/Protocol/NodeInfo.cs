@@ -3,7 +3,7 @@ using System.Numerics;
 
 namespace Umi.Dht.Client.Protocol;
 
-public struct NodeInfo
+public class NodeInfo
 {
     public required ReadOnlyMemory<byte> NodeID { get; init; }
 

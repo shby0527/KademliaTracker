@@ -28,7 +28,8 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
     private readonly ImmutableDictionary<string, Action<KademliaNode, KRpcPackage, KRpcPackage, EndPoint>> _eventMap
         = new Dictionary<string, Action<KademliaNode, KRpcPackage, KRpcPackage, EndPoint>>()
         {
-            { "find_node", OnFindNodeResponse }
+            { "find_node", OnFindNodeResponse },
+            { "ping", OnPingResponse }
         }.ToImmutableDictionary();
 
     private Timer? _timer;
@@ -123,6 +124,21 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
         this.BeginReceive();
     }
 
+    private static void OnPingResponse(KademliaNode sender,
+        KRpcPackage request, KRpcPackage response,
+        EndPoint remote)
+    {
+        var logger = sender._logger;
+        logger.LogTrace("received ping response");
+        if (response.Response == null) return;
+        if (remote is not IPEndPoint ip) return;
+        var dictionary = response.Response;
+        ReadOnlySpan<byte> nodeId = (byte[])dictionary["id"];
+        if (sender._kRouter.TryFoundNode(nodeId, out var node))
+        {
+            node.LatestAccessTime = DateTimeOffset.Now;
+        }
+    }
 
     private static void OnFindNodeResponse(KademliaNode sender,
         KRpcPackage request, KRpcPackage response,

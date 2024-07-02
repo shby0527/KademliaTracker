@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -110,6 +111,16 @@ public class KRouter
 
         // no found ? return the latest
         throw new UnreachableException("this can not happened");
+    }
+
+    public bool TryFoundNode(ReadOnlySpan<byte> node, [MaybeNullWhen(false)] out NodeInfo info)
+    {
+        var distances = KBucket.ComputeDistances(node, _currentNode.Span);
+        var prefixLength = KBucket.PrefixLength(distances);
+        var k = FindNestDistanceBucket(prefixLength);
+        var id = node.ToArray();
+        info = k.Nodes.FirstOrDefault(e => e.NodeID.Span.SequenceEqual(id));
+        return info != null;
     }
 
 
