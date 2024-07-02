@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Numerics;
 using System.Text;
 using Microsoft.Extensions.Primitives;
 
@@ -36,7 +37,9 @@ public struct KRpcPackage()
     /// <summary>
     /// transaction Id ，事务ID，响应的相关请求的ID
     /// </summary>
-    public required string TransactionId { get; init; }
+    public required byte[] TransactionId { get; init; }
+
+    public BigInteger FormattedTransaction => new(TransactionId, true, true);
 
     /// <summary>
     /// 响应类型, 每个类型对应下面任意一个字段
@@ -117,7 +120,7 @@ public struct KRpcPackage()
 
         KRpcPackage package = new()
         {
-            TransactionId = Encoding.ASCII.GetString((byte[])transactionId),
+            TransactionId = (byte[])transactionId,
             Type = Encoding.ASCII.GetString((byte[])type)switch
             {
                 "q" => KRpcTypes.Query,
@@ -269,7 +272,7 @@ public struct KRpcPackage()
             number.Append(Encoding.ASCII.GetString([chars.Current]));
         }
 
-        if (int.TryParse(number.ToString(), out var i))
+        if (!int.TryParse(number.ToString(), out var i))
         {
             throw new FormatException("can not convert to integer");
         }
@@ -322,6 +325,7 @@ public struct KRpcPackage()
             int value => BEncode(value),
             string str => BEncode(Encoding.ASCII.GetBytes(str)),
             ReadOnlyMemory<byte> b => BEncode(b.Span),
+            byte[] s => BEncode(s),
             ICollection<object> list => BEncode(list),
             IDictionary<string, object> iDic => BEncode(iDic),
             _ => throw new ArgumentOutOfRangeException(nameof(o), "unknown type")

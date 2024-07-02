@@ -3,7 +3,6 @@ using System.Collections.Immutable;
 using System.Net;
 using System.Net.Sockets;
 using System.Numerics;
-using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Umi.Dht.Client.Configurations;
@@ -20,11 +19,11 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
 
     private readonly SocketAsyncEventArgs _receivedEventArgs = new();
 
-    private readonly KRouter _kRouter = new(nodeId);
+    private readonly KRouter _kRouter = new(nodeId, provider);
 
     private const int MAX_PACK_SIZE = 0x10000;
 
-    private readonly ConcurrentDictionary<string, KRpcPackage> _packages = new();
+    private readonly ConcurrentDictionary<BigInteger, KRpcPackage> _packages = new();
 
     private readonly ImmutableDictionary<string, Action<KademliaNode, KRpcPackage, KRpcPackage, EndPoint>> _eventMap
         = new Dictionary<string, Action<KademliaNode, KRpcPackage, KRpcPackage, EndPoint>>()
@@ -61,7 +60,7 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
             foreach (var address in addresses)
             {
                 var find = KademliaProtocols.FindNode(CLIENT_NODE_ID.Span, CLIENT_NODE_ID.Span);
-                _packages.TryAdd(find.TransactionId, find);
+                _packages.TryAdd(find.FormattedTransaction, find);
                 _logger.LogDebug("send to HOST:{host}, IP: {ip}, port: {port}",
                     item.Key, address, item.Value);
                 _socket.SendTo(find.Encode(), new IPEndPoint(address, item.Value));
@@ -72,10 +71,9 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
     private void BeginReceive()
     {
         _receivedEventArgs.RemoteEndPoint = new IPEndPoint(IPAddress.Any, 0);
-        if (!_socket.ReceiveFromAsync(_receivedEventArgs))
-        {
-            this.OnReceived(_socket, _receivedEventArgs);
-        }
+        if (_socket.ReceiveFromAsync(_receivedEventArgs)) return;
+        _logger.LogTrace("already received");
+        ThreadPool.QueueUserWorkItem(_ => this.OnReceived(_socket, _receivedEventArgs));
     }
 
 
@@ -83,7 +81,8 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
     {
         if (args is not { SocketError: SocketError.Success, BytesTransferred: > 0 })
         {
-            _logger.LogInformation("close");
+            _logger.LogInformation("error package ,next receive");
+            this.BeginReceive();
             return;
         }
 
@@ -93,11 +92,12 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
             var package = KRpcPackage.Decode(buffered.Span);
             _logger.LogTrace("received package {page}， Type: {type}, from {from}",
                 package, package.Type, args.RemoteEndPoint);
+
             // found request package
             if (package is { Type: KRpcTypes.Response } &&
-                _packages.TryGetValue(package.TransactionId, out var request))
+                _packages.TryGetValue(package.FormattedTransaction, out var request))
             {
-                _packages.Remove(request.TransactionId, out _);
+                _packages.Remove(request.FormattedTransaction, out _);
                 if (_eventMap.TryGetValue(request.Query?.Method ?? "", out var action))
                 {
                     action(this, request, package, args.RemoteEndPoint!);
@@ -129,23 +129,28 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
     {
         if (response.Response == null) return;
         if (remote is not IPEndPoint ip) return;
-        sender._logger.LogTrace("begin process find_node, transaction: {tr}", request.TransactionId);
+        sender._logger.LogTrace("begin process find_node, transaction: {tr}", request.FormattedTransaction);
         var dictionary = response.Response;
         // found node response
         ReadOnlySpan<byte> id = (byte[])dictionary["id"];
-        // first, add k-bucket this first node for
-        var distance = KBucket.ComputeDistances(id, sender.CLIENT_NODE_ID.Span);
-        sender._kRouter.AddNode(new NodeInfo
+        if (!sender._kRouter.HasNodeExists(id))
         {
-            NodeID = id.ToArray(),
-            Distance = distance,
-            NodeAddress = ip.Address,
-            NodePort = ip.Port,
-            LatestAccessTime = DateTimeOffset.Now
-        });
+            // first, add k-bucket this first node for
+            var distance = KBucket.ComputeDistances(id, sender.CLIENT_NODE_ID.Span);
+            sender._kRouter.AddNode(new NodeInfo
+            {
+                NodeID = id.ToArray(),
+                Distance = distance,
+                NodeAddress = ip.Address,
+                NodePort = ip.Port,
+                LatestAccessTime = DateTimeOffset.Now
+            });
+        }
+
         ReadOnlySpan<byte> nodes = (byte[])dictionary["nodes"];
         var nodeCount = nodes.Length / 26;
         sender._logger.LogTrace("found {count} nodes", nodeCount);
+        var latestPrefixLength = sender._kRouter.LatestPrefixLength;
         for (var i = 0; i < nodes.Length; i += 26)
         {
             var item = nodes[i..(i + 26)];
@@ -155,21 +160,45 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
             var port = (int)new BigInteger(item[24..26], true, true);
             sender._logger.LogTrace("received node ID:{id}, IP: {ip}, port: {port} ",
                 BitConverter.ToString(itemId.ToArray()).Replace("-", ""), itemIP, port);
+            if (itemId.SequenceEqual(sender.CLIENT_NODE_ID.Span))
+            {
+                sender._logger.LogTrace("found my self, stoped");
+                return;
+            }
+
             if (sender._kRouter.HasNodeExists(itemId))
             {
                 sender._logger.LogTrace("node has already in this");
                 continue;
             }
 
-            sender._kRouter.AddNode(new NodeInfo
+            var node = new NodeInfo
             {
                 NodeID = itemId.ToArray(),
                 Distance = KBucket.ComputeDistances(itemId, sender.CLIENT_NODE_ID.Span),
                 NodeAddress = itemIP,
                 NodePort = port,
                 LatestAccessTime = DateTimeOffset.Now
-            });
+            };
+            var prefixLength = sender._kRouter.AddNode(node);
+            sender._logger.LogInformation("now node count: {c}", sender._kRouter.PeersCount);
+            if (prefixLength > latestPrefixLength && node.Distance > BigInteger.Zero)
+            {
+                sender.SendPackage(new IPEndPoint(itemIP, port),
+                    KademliaProtocols.FindNode(sender.CLIENT_NODE_ID.Span, sender.CLIENT_NODE_ID.Span));
+            }
         }
+    }
+
+    private void SendPackage(IPEndPoint endpoint, KRpcPackage package)
+    {
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            _packages.TryAdd(package.FormattedTransaction, package);
+            _logger.LogDebug("send to  IP: {ip}, port: {port}",
+                endpoint.Address, endpoint.Port);
+            _socket.SendTo(package.Encode(), endpoint);
+        });
     }
 
     private void CheckPackageALive()

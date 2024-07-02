@@ -1,5 +1,4 @@
-using System.Text;
-using Umi.Dht.Client.Utils;
+using System.Security.Cryptography;
 
 namespace Umi.Dht.Client.Protocol;
 
@@ -19,7 +18,7 @@ public static class KademliaProtocols
         return new KRpcPackage
         {
             Type = KRpcTypes.Query,
-            TransactionId = StringUtils.GenerateRandomString(8),
+            TransactionId = RandomNumberGenerator.GetBytes(8),
             Query = new QueryPackage
             {
                 Method = "find_node",
@@ -43,7 +42,7 @@ public static class KademliaProtocols
         return new KRpcPackage
         {
             Type = KRpcTypes.Query,
-            TransactionId = StringUtils.GenerateRandomString(8),
+            TransactionId = RandomNumberGenerator.GetBytes(8),
             Query = new QueryPackage
             {
                 Method = "ping",
