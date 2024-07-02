@@ -141,6 +141,8 @@ public class UpnpDiscoverWorker(
 
         var body = await response.Content.ReadAsStringAsync();
         logger.LogTrace("server response body {body}", body);
+        
+        // TODO: UPnP next Operator, Check Added, and Add PortMapping
     }
 
 
