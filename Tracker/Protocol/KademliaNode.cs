@@ -303,7 +303,9 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
             };
             var prefixLength = sender._kRouter.AddNode(node);
             sender._logger.LogInformation("now node count: {c}", sender._kRouter.PeersCount);
-            if ((prefixLength > latestPrefixLength || prefixLength < 20) && node.Distance > BigInteger.Zero)
+            if ((prefixLength > latestPrefixLength || prefixLength < 20)
+                && sender._kRouter.PeersCount <= 15000
+                && node.Distance > BigInteger.Zero)
             {
                 sender.SendPackage(new IPEndPoint(itemIP, port),
                     KademliaProtocols.FindNode(sender.CLIENT_NODE_ID.Span, sender.CLIENT_NODE_ID.Span));
@@ -315,7 +317,11 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
     {
         ThreadPool.QueueUserWorkItem(_ =>
         {
-            _packages.TryAdd(package.FormattedTransaction, package);
+            if (package.Type == KRpcTypes.Query)
+            {
+                _packages.TryAdd(package.FormattedTransaction, package);
+            }
+
             _logger.LogDebug("send to  IP: {ip}, port: {port}",
                 endpoint.Address, endpoint.Port);
             _socket.SendTo(package.Encode(), endpoint);
