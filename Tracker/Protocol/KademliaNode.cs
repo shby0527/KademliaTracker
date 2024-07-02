@@ -81,7 +81,8 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
     {
         if (args is not { SocketError: SocketError.Success, BytesTransferred: > 0 })
         {
-            _logger.LogInformation("error package ,next receive");
+            _logger.LogInformation("error package ,next receive {s}, r: {r}",
+                args.SocketError, args.RemoteEndPoint);
             this.BeginReceive();
             return;
         }
