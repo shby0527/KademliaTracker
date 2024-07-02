@@ -8,7 +8,7 @@ namespace Umi.Dht.Client.Protocol;
 /// </summary>
 public class KBucket
 {
-    public required BigInteger BucketDistance { get; init; }
+    public required int BucketDistance { get; init; }
 
     public required ConcurrentQueue<NodeInfo> Nodes { get; init; }
 
@@ -24,5 +24,22 @@ public class KBucket
         }
 
         return new BigInteger(buffer, true, true);
+    }
+
+    /// <summary>
+    /// 计算前缀长度
+    /// </summary>
+    /// <param name="node">节点</param>
+    /// <returns>前缀</returns>
+    public static int PrefixLength(BigInteger node)
+    {
+        var mask = BigInteger.One << 160;
+        for (var i = 0; i < 160; i++)
+        {
+            if ((node & mask) != BigInteger.Zero) return i;
+            mask |= mask >> 1;
+        }
+
+        return 160;
     }
 }
