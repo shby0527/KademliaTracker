@@ -232,7 +232,7 @@ public struct KRpcPackage()
             }
             else
             {
-                result.Add(BDecodeToString(ref chars).ToString());
+                result.Add(BDecodeToString(ref chars).ToArray());
             }
         }
 

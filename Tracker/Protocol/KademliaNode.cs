@@ -111,7 +111,7 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
             else
             {
                 _logger.LogDebug("unable found request package, maybe time out, transaction {t}",
-                    package.TransactionId);
+                    package.FormattedTransaction);
             }
         }
         catch (Exception e)
@@ -183,7 +183,7 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
             };
             var prefixLength = sender._kRouter.AddNode(node);
             sender._logger.LogInformation("now node count: {c}", sender._kRouter.PeersCount);
-            if (prefixLength > latestPrefixLength && node.Distance > BigInteger.Zero)
+            if ((prefixLength > latestPrefixLength || prefixLength < 20) && node.Distance > BigInteger.Zero)
             {
                 sender.SendPackage(new IPEndPoint(itemIP, port),
                     KademliaProtocols.FindNode(sender.CLIENT_NODE_ID.Span, sender.CLIENT_NODE_ID.Span));

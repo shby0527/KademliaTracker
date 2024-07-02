@@ -55,7 +55,7 @@ public class KRouter
 
             if (bucket.Nodes.Count > MAX_BUCKET_NODE && bucket.BucketDistance < 160)
             {
-                if (_buckets.TryPeek(out var latest) && latest.BucketDistance != bucket.BucketDistance)
+                if (_buckets.TryPeek(out var latest) && latest.BucketDistance == bucket.BucketDistance)
                 {
                     _logger.LogTrace("Split K-Bucket and next length {len}", bucket.BucketDistance + 1);
                     var nextBkt = new KBucket
@@ -77,6 +77,8 @@ public class KRouter
                             nextBkt.Nodes.Enqueue(info);
                         }
                     }
+
+                    _buckets.Push(nextBkt);
                 }
             }
 
@@ -98,8 +100,7 @@ public class KRouter
 
     private KBucket FindNestDistanceBucket(int prefixLength)
     {
-        var enumerable = _buckets.Reverse();
-        using var enumerator = enumerable.GetEnumerator();
+        using var enumerator = _buckets.GetEnumerator();
         while (enumerator.MoveNext())
         {
             if (enumerator.Current.BucketDistance > prefixLength)
