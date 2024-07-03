@@ -16,7 +16,7 @@ using Umi.Dht.Client.UPnP;
 namespace Umi.Dht.Client.Workers;
 
 [Service(ServiceScope.Singleton)]
-public partial class UpnpDiscoverWorker(
+public class UpnpDiscoverWorker(
     ILogger<UpnpDiscoverWorker> logger,
     IOptions<KademliaConfig> kademliaConfig,
     IConfiguration configuration,
