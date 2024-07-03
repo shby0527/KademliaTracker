@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Umi.Dht.Client.Attributes;
 using Umi.Dht.Client.Configurations;
+using Umi.Dht.Client.Operator;
 using Umi.Dht.Client.Protocol;
 
 namespace Umi.Dht.Client.Workers;
@@ -12,7 +13,7 @@ namespace Umi.Dht.Client.Workers;
 public class DistributedHashTableWorker(
     ILogger<DistributedHashTableWorker> logger,
     IOptions<KademliaConfig> kademliaConfig,
-    IServiceProvider provider) : BackgroundService
+    IServiceProvider provider) : BackgroundService, ICommandOperator
 {
     private KademliaNode? _kademliaNode;
 
@@ -35,5 +36,10 @@ public class DistributedHashTableWorker(
         logger.LogTrace("Host Stopping");
         _kademliaNode?.Stop();
         return base.StopAsync(cancellationToken);
+    }
+
+    public string CommandExecute(CommandContext ctx)
+    {
+        throw new NotImplementedException();
     }
 }
