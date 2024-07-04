@@ -420,14 +420,21 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
     {
         ThreadPool.QueueUserWorkItem(_ =>
         {
-            if (package.Type == KRpcTypes.Query)
+            try
             {
-                _packages.TryAdd(package.FormattedTransaction, package);
-            }
+                if (package.Type == KRpcTypes.Query)
+                {
+                    _packages.TryAdd(package.FormattedTransaction, package);
+                }
 
-            _logger.LogDebug("send to  IP: {ip}, port: {port}",
-                endpoint.Address, endpoint.Port);
-            _socket.SendTo(package.Encode(), endpoint);
+                _logger.LogDebug("send to  IP: {ip}, port: {port}",
+                    endpoint.Address, endpoint.Port);
+                _socket.SendTo(package.Encode(), endpoint);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "error send message");
+            }
         });
     }
 

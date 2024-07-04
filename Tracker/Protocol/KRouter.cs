@@ -146,7 +146,8 @@ public class KRouter
             StringBuilder sb = new($"bucket count {_buckets.Count}\r\n");
             foreach (var bucket in _buckets)
             {
-                sb.AppendLine($"\tbucket prefix length {bucket.BucketDistance}, node count: {bucket.Nodes.Count}");
+                sb.AppendLine(
+                    $"\tbucket prefix length {bucket.BucketDistance.ToString().PadLeft(3, '0')}, node count: {bucket.Nodes.Count}");
             }
 
             return sb.ToString();
