@@ -54,6 +54,24 @@ public static class KademliaProtocols
         };
     }
 
+    public static KRpcPackage GetPeersRequest(ReadOnlySpan<byte> id, ReadOnlySpan<byte> hash)
+    {
+        return new KRpcPackage
+        {
+            Type = KRpcTypes.Query,
+            TransactionId = RandomNumberGenerator.GetBytes(8),
+            Query = new QueryPackage
+            {
+                Method = "get_peers",
+                Arguments = new Dictionary<string, object>
+                {
+                    { "id", id.ToArray() },
+                    { "info_hash", hash.ToArray() }
+                }
+            }
+        };
+    }
+
     public static KRpcPackage PingResponse(ReadOnlySpan<byte> id, ReadOnlySpan<byte> transactionId)
     {
         return new KRpcPackage
@@ -81,6 +99,31 @@ public static class KademliaProtocols
                 { "id", id.ToArray() },
                 { "nodes", nodes.ToArray() }
             }
+        };
+    }
+
+    public static KRpcPackage GetPeersResponse(ReadOnlySpan<byte> id,
+        ReadOnlySpan<byte> nodes,
+        ReadOnlySpan<byte> peers,
+        ReadOnlySpan<byte> transactionId)
+    {
+        var token = RandomNumberGenerator.GetBytes(10);
+        var dictionary = new Dictionary<string, object>
+        {
+            { "id", id.ToArray() },
+            { "nodes", nodes.ToArray() },
+            { "token", token }
+        };
+        if (!peers.IsEmpty)
+        {
+            dictionary.Add("peers", peers.ToArray());
+        }
+
+        return new KRpcPackage
+        {
+            Type = KRpcTypes.Response,
+            TransactionId = transactionId.ToArray(),
+            Response = dictionary
         };
     }
 }

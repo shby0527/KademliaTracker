@@ -99,7 +99,7 @@ public class KRouter
     public int LatestPrefixLength { get; private set; } = 0;
 
 
-    private KBucket FindNestDistanceBucket(int prefixLength)
+    public KBucket FindNestDistanceBucket(int prefixLength)
     {
         using var enumerator = _buckets.GetEnumerator();
         while (enumerator.MoveNext())
