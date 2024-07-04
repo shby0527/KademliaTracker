@@ -40,6 +40,6 @@ public class DistributedHashTableWorker(
 
     public string CommandExecute(CommandContext ctx)
     {
-        throw new NotImplementedException();
+        return "test";
     }
 }

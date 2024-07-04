@@ -32,6 +32,7 @@ public class TelnetClient(Socket socket, IServiceProvider provider)
             };
             _thread.Start();
             this.BeginReceived();
+            socket.Send(Encoding.UTF8.GetBytes("Welcome Umi Kademlia Console\nCommand:>"));
         }
         else
         {
@@ -53,6 +54,10 @@ public class TelnetClient(Socket socket, IServiceProvider provider)
         var memory = args.MemoryBuffer[..args.BytesTransferred];
         memory.CopyTo(buffer);
         writer.Advance(args.BytesTransferred);
+        var task = writer.FlushAsync().AsTask();
+        task.ConfigureAwait(false)
+            .GetAwaiter()
+            .OnCompleted(() => _logger.LogTrace("flushed"));
         this.BeginReceived();
     }
 
@@ -77,16 +82,19 @@ public class TelnetClient(Socket socket, IServiceProvider provider)
             try
             {
                 var commandOperator = provider.GetRequiredService<ICommandOperator>();
-                if (split.Length <= 1)
+                var ctx = split.Length <= 1
+                    ? new CommandContext(split[0], [])
+                    : new CommandContext(split[0], split[1..]);
+                if (ctx.Command is "exit" or "bye")
                 {
-                    CommandContext ctx = new(split[0], []);
-                    commandOperator.CommandExecute(ctx);
+                    this.Close();
+                    return;
                 }
-                else
-                {
-                    CommandContext ctx = new(split[0], split[1..]);
-                    commandOperator.CommandExecute(ctx);
-                }
+
+                var result = commandOperator.CommandExecute(ctx) + "\nCommand:>";
+                // send result
+                var sendBytes = socket.Send(Encoding.UTF8.GetBytes(result));
+                _logger.LogTrace("send {bytes} bytes data", sendBytes);
             }
             catch (Exception e)
             {
