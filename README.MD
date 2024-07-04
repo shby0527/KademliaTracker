@@ -1,5 +1,3 @@
 # Kademlia Distributed Hash Table Network Tracker
 
---------
-
-Just a fun
+Just for Fun
