@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using System.IO.Pipelines;
 using System.Net;
 using System.Net.Sockets;
 using System.Numerics;
+using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -454,6 +456,17 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
             var request = KademliaProtocols.GetPeersRequest(CLIENT_NODE_ID.Span, infoHash);
             SendPackage(new IPEndPoint(info.NodeAddress, info.NodePort), request);
         }
+    }
+
+
+    public string GetNodeCount()
+    {
+        return _kRouter.PeersCount.ToString();
+    }
+
+    public string GetBucketCount()
+    {
+        return _kRouter.BucketCount;
     }
 
     public void Stop()

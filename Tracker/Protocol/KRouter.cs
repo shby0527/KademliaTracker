@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -136,5 +137,19 @@ public class KRouter
     public long PeersCount
     {
         get { return _buckets.Aggregate<KBucket, long>(0, (current, bucket) => current + bucket.Nodes.Count); }
+    }
+
+    public string BucketCount
+    {
+        get
+        {
+            StringBuilder sb = new($"bucket count {_buckets.Count}\r\n");
+            foreach (var bucket in _buckets)
+            {
+                sb.AppendLine($"\tbucket prefix length {bucket.BucketDistance}, node count: {bucket.Nodes.Count}");
+            }
+
+            return sb.ToString();
+        }
     }
 }

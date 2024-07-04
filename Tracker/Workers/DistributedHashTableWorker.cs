@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Pipelines;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -39,6 +40,7 @@ public class DistributedHashTableWorker(
         logger.LogTrace("now initial command handler");
         _command.Add("help", HelpCommand);
         _command.Add("get_peers", this.GetPeers);
+        _command.Add("count", this.GetCount);
     }
 
 
@@ -58,6 +60,9 @@ public class DistributedHashTableWorker(
                get_peers      send get peers package
                               arguments:
                                     hash=<value>    sending parameters
+               count          get type count
+                              arguments:
+                                    type=<node|kBucket> count of type
                """;
     }
 
@@ -90,6 +95,21 @@ public class DistributedHashTableWorker(
 
         _kademliaNode?.SendGetPeers(hash);
         return "package send";
+    }
+
+    private string GetCount(IDictionary<string, string> arguments)
+    {
+        if (arguments.TryGetValue("type", out var v))
+        {
+            return v switch
+            {
+                "node" => _kademliaNode?.GetNodeCount() ?? "0",
+                "kBucket" => _kademliaNode?.GetBucketCount() ?? "",
+                _ => "unknown"
+            };
+        }
+
+        return "unknown arguments";
     }
 
     public string CommandExecute(CommandContext ctx)
