@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -17,9 +18,12 @@ public class DistributedHashTableWorker(
 {
     private KademliaNode? _kademliaNode;
 
+    private readonly Dictionary<string, Func<IDictionary<string, string>, string>> _command = new();
+
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogTrace("begin DHT tracking");
+        this.InitialCommand();
         // init node id
         var generator = RandomNumberGenerator.Create();
         Memory<byte> nodeId = new byte[20];
@@ -30,6 +34,13 @@ public class DistributedHashTableWorker(
         return Task.CompletedTask;
     }
 
+    private void InitialCommand()
+    {
+        logger.LogTrace("now initial command handler");
+        _command.Add("help", HelpCommand);
+        _command.Add("get_peers", this.GetPeers);
+    }
+
 
     public override Task StopAsync(CancellationToken cancellationToken)
     {
@@ -38,8 +49,53 @@ public class DistributedHashTableWorker(
         return base.StopAsync(cancellationToken);
     }
 
+
+    private static string HelpCommand(IDictionary<string, string> arguments)
+    {
+        return """
+               Help List
+               =====================
+               get_peers      send get peers package
+                              arguments:
+                                    hash=<value>    sending parameters
+               """;
+    }
+
+
+    private string GetPeers(IDictionary<string, string> arguments)
+    {
+        if (!arguments.TryGetValue("hash", out var value))
+        {
+            return "get_peers required argument hash";
+        }
+
+        if (value.Length != 40)
+        {
+            return "get_peers argument length error";
+        }
+
+        Span<byte> hash = stackalloc byte[20];
+        try
+        {
+            for (var i = 0; i < value.Length; i += 2)
+            {
+                var bh = value[i..(i + 2)];
+                hash[i / 2] = byte.Parse(bh, NumberStyles.HexNumber);
+            }
+        }
+        catch (Exception e)
+        {
+            return e.Message;
+        }
+
+        _kademliaNode?.SendGetPeers(hash);
+        return "package send";
+    }
+
     public string CommandExecute(CommandContext ctx)
     {
-        return "test";
+        if (!_command.TryGetValue(ctx.Command, out var action))
+            return $"can not found command {ctx.Command}, please try again.";
+        return action(ctx.Arguments);
     }
 }

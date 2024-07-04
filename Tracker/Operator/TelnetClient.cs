@@ -32,7 +32,7 @@ public class TelnetClient(Socket socket, IServiceProvider provider)
             };
             _thread.Start();
             this.BeginReceived();
-            socket.Send(Encoding.UTF8.GetBytes("Welcome Umi Kademlia Console\nCommand:>"));
+            socket.Send(Encoding.UTF8.GetBytes("Welcome Umi Kademlia Console\r\nCommand:>"));
         }
         else
         {
@@ -44,6 +44,7 @@ public class TelnetClient(Socket socket, IServiceProvider provider)
     {
         if (args is not { SocketError: SocketError.Success, BytesTransferred: > 0 })
         {
+            _logger.LogTrace("remote closed");
             this.Close();
             return;
         }
@@ -91,7 +92,7 @@ public class TelnetClient(Socket socket, IServiceProvider provider)
                     return;
                 }
 
-                var result = commandOperator.CommandExecute(ctx) + "\nCommand:>";
+                var result = commandOperator.CommandExecute(ctx) + "\r\nCommand:>";
                 // send result
                 var sendBytes = socket.Send(Encoding.UTF8.GetBytes(result));
                 _logger.LogTrace("send {bytes} bytes data", sendBytes);

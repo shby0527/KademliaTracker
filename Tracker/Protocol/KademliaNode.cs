@@ -340,6 +340,11 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
         }
     }
 
+
+    public void SendGetPeers(ReadOnlySpan<byte> infoHash)
+    {
+    }
+
     public void Stop()
     {
         _logger.LogTrace("Node Stopping");

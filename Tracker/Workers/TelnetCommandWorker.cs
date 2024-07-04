@@ -60,8 +60,18 @@ public class TelnetCommandWorker(
     private void OnClientClose(object? sender, EventArgs eventArgs)
     {
         if (sender is not TelnetClient client) return;
-        client.ClientClose -= this.OnClientClose;
-        _clients.Remove(client);
+        try
+        {
+            client.ClientClose -= this.OnClientClose;
+            lock (_clients)
+            {
+                _clients.Remove(client);
+            }
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, "closed");
+        }
     }
 
     public override Task StopAsync(CancellationToken cancellationToken)
