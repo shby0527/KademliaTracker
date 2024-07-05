@@ -311,8 +311,38 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
     {
         var logger = sender._logger;
         logger.LogTrace("announce peer request");
+        if (remote is not IPEndPoint ip) return;
+        var arguments = request.Query!.Value.Arguments;
+        ReadOnlySpan<byte> id = (byte[])arguments["id"];
+        if (sender._kRouter.TryFoundNode(id, out var node))
+        {
+            sender._kRouter.AdjustNode(node);
+        }
 
-        // TODO: 这里可以直接获取到 btih, 表示该peer正在下载的peer, 需要保存，get peer 的时候需要用
+        ReadOnlySpan<byte> hash = (byte[])arguments["info_hash"];
+        var semaphore = sender._fileWrite;
+        var magnetLink = $"magnet:?xt=urn:btih:{BitConverter.ToString(hash.ToArray()).Replace("-", "")}";
+        logger.LogTrace("found magnet link {link}", magnetLink);
+        try
+        {
+            semaphore.WaitOne();
+            var info = sender._environment.ContentRootFileProvider.GetFileInfo("bt/magnet.txt");
+            var outfile = info.PhysicalPath!;
+            FileInfo fileInfo = new(outfile);
+            if (!(fileInfo.Directory?.Exists ?? true))
+            {
+                fileInfo.Directory?.Create();
+            }
+
+            File.AppendAllLines(outfile, [magnetLink]);
+        }
+        finally
+        {
+            semaphore.Release();
+        }
+
+        logger.LogTrace("announce response, transaction {tr}", request.FormattedTransaction);
+        sender.SendPackage(ip, KademliaProtocols.PingResponse(sender.CLIENT_NODE_ID.Span, request.TransactionId));
     }
 
     private static void OnFindNodeRequest(KademliaNode sender,
