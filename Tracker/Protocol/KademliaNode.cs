@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Net;
 using System.Net.Sockets;
 using System.Numerics;
+using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -503,6 +504,17 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
     public string GetBucketCount()
     {
         return _kRouter.BucketCount;
+    }
+
+    public string ListBitTorrentInfoHash()
+    {
+        StringBuilder sb = new();
+        foreach (var item in _torrentInfoHashManager)
+        {
+            sb.Append($"{item.HashText}: peers count {item.Peers.Count.ToString()}\r\n");
+        }
+
+        return sb.ToString();
     }
 
     public void Stop()

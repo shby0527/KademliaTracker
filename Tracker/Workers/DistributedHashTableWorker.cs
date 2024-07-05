@@ -41,6 +41,7 @@ public class DistributedHashTableWorker(
         _command.Add("help", HelpCommand);
         _command.Add("get_peers", this.GetPeers);
         _command.Add("count", this.GetCount);
+        _command.Add("listbtih", this.ListBitTorrentInfoHash);
     }
 
 
@@ -63,7 +64,13 @@ public class DistributedHashTableWorker(
                count          get type count
                               arguments:
                                     type=<node|kBucket> count of type
+               listbtih       list BitTorrent Info Hash and peers counts
                """;
+    }
+
+    private string ListBitTorrentInfoHash(IDictionary<string, string> dictionary)
+    {
+        return _kademliaNode?.ListBitTorrentInfoHash() ?? "error execute command";
     }
 
 

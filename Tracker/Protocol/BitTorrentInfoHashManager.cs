@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
@@ -6,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Umi.Dht.Client.Protocol;
 
-public class BitTorrentInfoHashManager(IServiceProvider provider)
+public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<IBitTorrentInfoHash>
 {
     private readonly ILogger<BitTorrentInfoHashManager> _logger =
         provider.GetRequiredService<ILogger<BitTorrentInfoHashManager>>();
@@ -88,6 +89,16 @@ public class BitTorrentInfoHashManager(IServiceProvider provider)
         public NodeInfo Node => node;
         public IPAddress Address => address;
         public int Port => port;
+    }
+
+    public IEnumerator<IBitTorrentInfoHash> GetEnumerator()
+    {
+        return _bitTorrentInfo.Select(hash => hash.Value).GetEnumerator();
+    }
+
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return this.GetEnumerator();
     }
 }
 
