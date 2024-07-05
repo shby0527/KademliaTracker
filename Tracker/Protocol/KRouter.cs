@@ -31,8 +31,7 @@ public class KRouter
         _buckets.Push(new KBucket
         {
             BucketDistance = 0,
-            Nodes = [],
-            Split = false
+            Nodes = []
         });
     }
 
@@ -53,34 +52,14 @@ public class KRouter
             _semaphore.WaitOne();
             var prefixLength = KBucket.PrefixLength(node.Distance);
             var bucket = this.FindNestDistanceBucket(prefixLength);
-            bucket.Nodes.Enqueue(node);
-
+            bucket.InsertNode(node);
             if (bucket.Nodes.Count > MAX_BUCKET_NODE && bucket.BucketDistance < 160)
             {
                 if (_buckets.TryPeek(out var latest) && latest.BucketDistance == bucket.BucketDistance)
                 {
                     _logger.LogTrace("Split K-Bucket and next length {len}", bucket.BucketDistance + 1);
-                    var nextBkt = new KBucket
-                    {
-                        BucketDistance = latest.BucketDistance + 1,
-                        Nodes = [],
-                        Split = false
-                    };
-                    for (var i = 0; i < latest.Nodes.Count; i++)
-                    {
-                        if (!latest.Nodes.TryDequeue(out var info)) continue;
-                        var length = KBucket.PrefixLength(info.Distance);
-                        if (length < nextBkt.BucketDistance)
-                        {
-                            latest.Nodes.Enqueue(info);
-                        }
-                        else
-                        {
-                            nextBkt.Nodes.Enqueue(info);
-                        }
-                    }
 
-                    _buckets.Push(nextBkt);
+                    _buckets.Push(latest.SplitBucket(_currentNode.Span));
                 }
             }
 
@@ -112,6 +91,14 @@ public class KRouter
 
         // no found ? return the latest
         throw new UnreachableException("this can not happened");
+    }
+
+
+    public void AdjustNode(NodeInfo node)
+    {
+        var prefixLength = KBucket.PrefixLength(node.Distance);
+        var k = FindNestDistanceBucket(prefixLength);
+        k.AdjustItem(node);
     }
 
     public bool TryFoundNode(ReadOnlySpan<byte> node, [MaybeNullWhen(false)] out NodeInfo info)

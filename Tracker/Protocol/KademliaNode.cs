@@ -170,7 +170,7 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
         ReadOnlySpan<byte> nodeId = (byte[])dictionary["id"];
         if (sender._kRouter.TryFoundNode(nodeId, out var node))
         {
-            node.LatestAccessTime = DateTimeOffset.Now;
+            sender._kRouter.AdjustNode(node);
         }
 
         if (!dictionary.TryGetValue("nodes", out var nodes)) return;
@@ -224,7 +224,7 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
         ReadOnlySpan<byte> nodeId = (byte[])dictionary["id"];
         if (sender._kRouter.TryFoundNode(nodeId, out var node))
         {
-            node.LatestAccessTime = DateTimeOffset.Now;
+            sender._kRouter.AdjustNode(node);
         }
     }
 
@@ -296,7 +296,7 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
         ReadOnlySpan<byte> target = (byte[])arguments["target"];
         if (sender._kRouter.TryFoundNode(nodeId, out var node))
         {
-            node.LatestAccessTime = DateTimeOffset.Now;
+            sender._kRouter.AdjustNode(node);
         }
         else
         {
@@ -339,7 +339,7 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
         ReadOnlySpan<byte> id = (byte[])arguments["id"];
         if (sender._kRouter.TryFoundNode(id, out var node))
         {
-            node.LatestAccessTime = DateTimeOffset.Now;
+            sender._kRouter.AdjustNode(node);
         }
 
         logger.LogTrace("ping response, transaction {tr}", request.FormattedTransaction);

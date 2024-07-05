@@ -10,9 +10,10 @@ public class KBucket
 {
     public required int BucketDistance { get; init; }
 
-    public required ConcurrentQueue<NodeInfo> Nodes { get; init; }
+    public required Stack<NodeInfo> Nodes { get; init; }
 
-    public required bool Split { get; init; }
+
+    private readonly Semaphore _semaphore = new(1, 1);
 
     public static BigInteger ComputeDistances(ReadOnlySpan<byte> h1, ReadOnlySpan<byte> h2)
     {
@@ -41,5 +42,71 @@ public class KBucket
         }
 
         return 160;
+    }
+
+    public void InsertNode(NodeInfo node)
+    {
+        try
+        {
+            _semaphore.WaitOne();
+            this.Nodes.Push(node);
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
+    public void AdjustItem(NodeInfo info)
+    {
+        try
+        {
+            _semaphore.WaitOne();
+            for (var i = 0; i < this.Nodes.Count; i++)
+            {
+                var pop = this.Nodes.Pop();
+                if (ReferenceEquals(pop, info)) continue;
+                this.Nodes.Push(pop);
+            }
+
+            info.LatestAccessTime = DateTimeOffset.Now;
+            this.Nodes.Push(info);
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
+    public KBucket SplitBucket(ReadOnlySpan<byte> nodeId)
+    {
+        var bucket = new KBucket
+        {
+            BucketDistance = this.BucketDistance + 1,
+            Nodes = []
+        };
+        try
+        {
+            _semaphore.WaitOne();
+            for (var i = 0; i < this.Nodes.Count; i++)
+            {
+                var info = this.Nodes.Pop();
+                if (PrefixLength(info.Distance) < bucket.BucketDistance)
+                {
+                    this.Nodes.Push(info);
+                }
+                else
+                {
+                    bucket.Nodes.Push(info);
+                }
+            }
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+
+
+        return bucket;
     }
 }
