@@ -107,7 +107,7 @@ public static class KademliaProtocols
 
     public static KRpcPackage GetPeersResponse(ReadOnlySpan<byte> id,
         ReadOnlySpan<byte> nodes,
-        ReadOnlySpan<byte> peers,
+        ICollection<byte[]> peers,
         ReadOnlySpan<byte> transactionId)
     {
         var token = _tokenGenerator.Token.ToArray();
@@ -117,9 +117,9 @@ public static class KademliaProtocols
             { "nodes", nodes.ToArray() },
             { "token", token }
         };
-        if (!peers.IsEmpty)
+        if (peers.Count != 0)
         {
-            dictionary.Add("peers", peers.ToArray());
+            dictionary.Add("values", peers);
         }
 
         return new KRpcPackage

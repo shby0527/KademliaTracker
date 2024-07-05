@@ -281,8 +281,21 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
             nodes.AddRange(port.ToByteArray(true, true));
         }
 
+        var btih = BitConverter.ToString(hash.ToArray()).Replace("-", "");
+        ICollection<byte[]> peers = [];
+        if (sender._torrentInfoHashManager.TryGetBitTorrentInfoHash(btih, out var infoH))
+        {
+            peers = new List<byte[]>();
+            foreach (var peer in infoH.Peers)
+            {
+                var bytes = peer.Address.GetAddressBytes();
+                var port = new BigInteger(peer.Port).ToByteArray(true, true);
+                peers.Add([..bytes, ..port]);
+            }
+        }
+
         var response = KademliaProtocols.GetPeersResponse(sender.CLIENT_NODE_ID.Span, nodes.ToArray(),
-            ReadOnlySpan<byte>.Empty, request.TransactionId);
+            peers, request.TransactionId);
         sender.SendPackage(ip, response);
         var semaphore = sender._fileWrite;
         var magnetLink = $"magnet:?xt=urn:btih:{BitConverter.ToString(hash.ToArray()).Replace("-", "")}";
@@ -320,6 +333,21 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
         }
 
         ReadOnlySpan<byte> hash = (byte[])arguments["info_hash"];
+        var infoHash = sender._torrentInfoHashManager.AddBitTorrentInfoHash(hash);
+        if (arguments.TryGetValue("implied_port", out var iPort) && iPort is int p && p != 0)
+        {
+            var peer = BitTorrentInfoHashManager.CreatePeer(ip.Address, ip.Port, node!);
+            infoHash.AddPeers([peer]);
+        }
+        else
+        {
+            var eport = (int)arguments["port"];
+            var peer = BitTorrentInfoHashManager.CreatePeer(ip.Address, eport, node!);
+            infoHash.AddPeers([peer]);
+        }
+
+        infoHash.AnnounceNode(node!);
+
         var semaphore = sender._fileWrite;
         var magnetLink = $"magnet:?xt=urn:btih:{BitConverter.ToString(hash.ToArray()).Replace("-", "")}";
         logger.LogTrace("found magnet link {link}", magnetLink);
