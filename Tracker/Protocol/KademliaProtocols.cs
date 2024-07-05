@@ -7,6 +7,9 @@ namespace Umi.Dht.Client.Protocol;
 /// </summary>
 public static class KademliaProtocols
 {
+    private static readonly TokenGenerator _tokenGenerator = new();
+
+
     /// <summary>
     /// Kademlia find node 包
     /// </summary>
@@ -107,7 +110,7 @@ public static class KademliaProtocols
         ReadOnlySpan<byte> peers,
         ReadOnlySpan<byte> transactionId)
     {
-        var token = RandomNumberGenerator.GetBytes(10);
+        var token = _tokenGenerator.Token.ToArray();
         var dictionary = new Dictionary<string, object>
         {
             { "id", id.ToArray() },
