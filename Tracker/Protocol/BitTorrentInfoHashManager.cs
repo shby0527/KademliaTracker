@@ -80,7 +80,6 @@ public class BitTorrentInfoHashManager(IServiceProvider provider)
 
         public void BeginGetMetadata()
         {
-            
         }
     }
 
