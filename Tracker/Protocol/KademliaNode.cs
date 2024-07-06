@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Numerics;
@@ -297,6 +298,10 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
         var response = KademliaProtocols.GetPeersResponse(sender.CLIENT_NODE_ID.Span, nodes.ToArray(),
             peers, request.TransactionId);
         sender.SendPackage(ip, response);
+        if(peers.Count == 0){
+            logger.LogTrace("begin auto send get peers for {hash}", btih);
+            sender.SendGetPeers(hash);
+        }
         var semaphore = sender._fileWrite;
         var magnetLink = $"magnet:?xt=urn:btih:{BitConverter.ToString(hash.ToArray()).Replace("-", "")}";
         logger.LogTrace("found magnet link {link}", magnetLink);
@@ -494,7 +499,7 @@ public class KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider
             };
             var prefixLength = sender._kRouter.AddNode(node);
             sender._logger.LogInformation("now node count: {c}", sender._kRouter.PeersCount);
-            if ((prefixLength > latestPrefixLength || prefixLength < 20)
+            if ((prefixLength > latestPrefixLength || prefixLength < 40)
                 && sender._kRouter.PeersCount <= 15000
                 && node.Distance > BigInteger.Zero)
             {
