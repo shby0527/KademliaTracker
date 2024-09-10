@@ -32,7 +32,7 @@ public class TelnetClient(Socket socket, IServiceProvider provider)
             };
             _thread.Start();
             this.BeginReceived();
-            socket.Send(Encoding.UTF8.GetBytes("Welcome Umi Kademlia Console\r\nCommand:>"));
+            socket.Send("Welcome Umi Kademlia Console\r\nCommand:>"u8.ToArray());
         }
         else
         {

@@ -23,8 +23,7 @@ public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<
         var btih = BitConverter.ToString(infoHash.ToArray()).Replace("-", "");
         lock (_bitTorrentInfo)
         {
-            IBitTorrentInfoHash hash;
-            if (_bitTorrentInfo.TryGetValue(btih, out hash)) return hash;
+            if (_bitTorrentInfo.TryGetValue(btih, out var hash)) return hash;
             hash = new BitTorrentInfoHashPrivateTracker(infoHash.ToArray());
             _bitTorrentInfo[btih] = hash;
             return hash;
