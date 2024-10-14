@@ -80,6 +80,7 @@ public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<
 
         public void BeginGetMetadata()
         {
+            
         }
     }
 
