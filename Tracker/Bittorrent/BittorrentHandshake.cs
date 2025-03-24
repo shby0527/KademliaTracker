@@ -4,21 +4,21 @@ using System.Text;
 namespace Umi.Dht.Client.Bittorrent;
 
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
-public ref struct BittorrentHandshake
+public readonly ref struct BittorrentHandshake
 {
-    public string Header => "19:BitTorrent protocol";
+    private const string Header = "BitTorrent protocol";
 
-    public ReadOnlySpan<byte> InfoHash { get; set; }
+    public ReadOnlySpan<byte> InfoHash { get; init; }
 
-    public ReadOnlySpan<byte> PeerId { get; set; }
+    public ReadOnlySpan<byte> PeerId { get; init; }
 
     public ReadOnlySpan<byte> Encode()
     {
         var header = Encoding.UTF8.GetBytes(Header);
-        Span<byte> handshake = new byte[header.Length + 8 + PeerId.Length + InfoHash.Length];
-        header.CopyTo(handshake);
-        InfoHash.CopyTo(handshake[(header.Length + 8)..]);
-        PeerId.CopyTo(handshake[(header.Length + 8 + InfoHash.Length)..]);
+        Span<byte> handshake = new byte[1 + header.Length + 8 + PeerId.Length + InfoHash.Length];
+        handshake[0] = 19;
+        InfoHash.CopyTo(handshake[(header.Length + 9)..]);
+        PeerId.CopyTo(handshake[(header.Length + 9 + InfoHash.Length)..]);
         return handshake;
     }
 }

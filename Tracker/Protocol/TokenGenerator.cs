@@ -8,7 +8,7 @@ public class TokenGenerator
 
     private DateTimeOffset _latestGen = DateTimeOffset.MinValue;
 
-    private readonly TimeSpan halfHour = TimeSpan.FromMinutes(30);
+    private readonly TimeSpan _halfHour = TimeSpan.FromMinutes(30);
 
     private readonly object _sync = new();
 
@@ -16,10 +16,10 @@ public class TokenGenerator
     {
         get
         {
-            if (DateTimeOffset.Now - _latestGen <= halfHour) return _buffer.Span;
+            if (DateTimeOffset.Now - _latestGen <= _halfHour) return _buffer.Span;
             lock (_sync)
             {
-                if (DateTimeOffset.Now - _latestGen <= halfHour) return _buffer.Span;
+                if (DateTimeOffset.Now - _latestGen <= _halfHour) return _buffer.Span;
                 _latestGen = DateTimeOffset.Now;
                 RandomNumberGenerator.Fill(_buffer.Span);
             }

@@ -10,12 +10,14 @@ public sealed class SamplePeer : IBittorrentPeer, IDisposable
     private readonly Socket _socket = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
 
     private readonly SocketAsyncEventArgs _socketAsyncEventArgs = new();
+    
+    private readonly SocketAsyncEventArgs _socketConnectEventArgs = new();
 
     private readonly IServiceProvider _serviceProvider;
 
-    private readonly ReadOnlyMemory<byte> PEER_ID;
+    private readonly ReadOnlyMemory<byte> _peerId;
 
-    private readonly ReadOnlyMemory<byte> INFO_HASH;
+    private readonly ReadOnlyMemory<byte> _infoHash;
 
     private readonly ILogger<SamplePeer> _logger;
 
@@ -24,8 +26,8 @@ public sealed class SamplePeer : IBittorrentPeer, IDisposable
         Peer = peer;
         _serviceProvider = provider;
         _logger = provider.GetRequiredService<ILogger<SamplePeer>>();
-        PEER_ID = peerId.ToArray();
-        INFO_HASH = infoHash.ToArray();
+        _peerId = peerId.ToArray();
+        _infoHash = infoHash.ToArray();
         _socketAsyncEventArgs.Completed += OnReceiveEvent;
         Memory<byte> buffer = new byte[4096];
         _socketAsyncEventArgs.SetBuffer(buffer);
@@ -45,6 +47,7 @@ public sealed class SamplePeer : IBittorrentPeer, IDisposable
         _socket.Connect(Peer.Address, Peer.Port);
         _socket.ReceiveAsync(_socketAsyncEventArgs);
         this.SendHandshake();
+        IsConnected = true;
     }
 
 
@@ -53,8 +56,8 @@ public sealed class SamplePeer : IBittorrentPeer, IDisposable
         // bittorrent handshake package
         BittorrentHandshake handshake = new()
         {
-            PeerId = PEER_ID.ToArray(),
-            InfoHash = INFO_HASH.ToArray()
+            PeerId = _peerId.ToArray(),
+            InfoHash = _infoHash.ToArray()
         };
         _socket.Send(handshake.Encode());
     }
