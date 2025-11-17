@@ -61,8 +61,8 @@ public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<
             try
             {
                 _semaphore.WaitOne();
-                var distances = KBucket.ComputeDistances(node.NodeID.Span, btih);
-                var prefixLength = KBucket.PrefixLength(distances);
+                var distances = KRouter.ComputeDistances(node.NodeId.Span, btih);
+                var prefixLength = KRouter.PrefixLength(distances);
                 if (MaxDistance > prefixLength) return false;
                 MaxDistance = prefixLength;
                 return true;

@@ -1,5 +1,4 @@
-using System.Collections.Concurrent;
-using System.Numerics;
+using System.Collections.Immutable;
 
 namespace Umi.Dht.Client.Protocol;
 
@@ -8,40 +7,27 @@ namespace Umi.Dht.Client.Protocol;
 /// </summary>
 public class KBucket
 {
+    public const int MAX_BUCKET_NODE = 8;
+
     public required int BucketDistance { get; init; }
 
-    public required Stack<NodeInfo> Nodes { get; init; }
-
+    private readonly LinkedList<NodeInfo> _nodeInfo = [];
 
     private readonly Semaphore _semaphore = new(1, 1);
 
-    public static BigInteger ComputeDistances(ReadOnlySpan<byte> h1, ReadOnlySpan<byte> h2)
-    {
-        if (h1.Length != h2.Length) return BigInteger.Zero;
-        Span<byte> buffer = stackalloc byte[h1.Length];
-        for (var i = 0; i < h1.Length; i++)
-        {
-            buffer[i] = (byte)(h1[i] ^ h2[i]);
-        }
 
-        return new BigInteger(buffer, true, true);
+    public NodeInfo? this[ReadOnlySpan<byte> id]
+    {
+        get
+        {
+            var bytes = id.ToArray();
+            return _nodeInfo.FirstOrDefault(e => e.NodeId.Span.SequenceEqual(bytes));
+        }
     }
 
-    /// <summary>
-    /// 计算前缀长度
-    /// </summary>
-    /// <param name="node">节点</param>
-    /// <returns>前缀</returns>
-    public static int PrefixLength(BigInteger node)
+    public IEnumerable<NodeInfo> Take(int num)
     {
-        var mask = BigInteger.One << 160;
-        for (var i = 0; i < 160; i++)
-        {
-            if ((node & mask) != BigInteger.Zero) return i;
-            mask |= mask >> 1;
-        }
-
-        return 160;
+        return [.._nodeInfo.Take(num)];
     }
 
     public void InsertNode(NodeInfo node)
@@ -49,7 +35,7 @@ public class KBucket
         try
         {
             _semaphore.WaitOne();
-            this.Nodes.Push(node);
+            _nodeInfo.AddFirst(node);
         }
         finally
         {
@@ -62,15 +48,11 @@ public class KBucket
         try
         {
             _semaphore.WaitOne();
-            for (var i = 0; i < this.Nodes.Count; i++)
-            {
-                var pop = this.Nodes.Pop();
-                if (ReferenceEquals(pop, info)) continue;
-                this.Nodes.Push(pop);
-            }
-
-            info.LatestAccessTime = DateTimeOffset.Now;
-            this.Nodes.Push(info);
+            // 调整节点到第一
+            var node = _nodeInfo.Find(info);
+            if (node is null) return;
+            _nodeInfo.Remove(node);
+            _nodeInfo.AddFirst(node);
         }
         finally
         {
@@ -78,27 +60,26 @@ public class KBucket
         }
     }
 
-    public KBucket SplitBucket(ReadOnlySpan<byte> nodeId)
+    public KBucket SplitBucket()
     {
+        // 基础判断
         var bucket = new KBucket
         {
             BucketDistance = this.BucketDistance + 1,
-            Nodes = []
         };
+        if (_nodeInfo.Count == 0) return bucket;
         try
         {
             _semaphore.WaitOne();
-            for (var i = 0; i < this.Nodes.Count; i++)
+            var node = _nodeInfo.First;
+            while (node is not null)
             {
-                var info = this.Nodes.Pop();
-                if (PrefixLength(info.Distance) < bucket.BucketDistance)
-                {
-                    this.Nodes.Push(info);
-                }
-                else
-                {
-                    bucket.Nodes.Push(info);
-                }
+                var current = node;
+                node = current.Next;
+                var prefixLength = KRouter.PrefixLength(current.Value.Distance);
+                if (prefixLength <= this.BucketDistance) continue; // else case , 无操作，节点留在当前
+                _nodeInfo.Remove(current);
+                bucket._nodeInfo.AddLast(current);
             }
         }
         finally
@@ -109,4 +90,12 @@ public class KBucket
 
         return bucket;
     }
+
+    public bool HasNode(ReadOnlySpan<byte> nodeId)
+    {
+        var bytes = nodeId.ToArray();
+        return _nodeInfo.Any(t => t.NodeId.Span.SequenceEqual(bytes));
+    }
+
+    public long Count => _nodeInfo.Count;
 }

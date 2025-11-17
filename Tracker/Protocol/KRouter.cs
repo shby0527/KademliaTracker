@@ -1,7 +1,5 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -10,11 +8,9 @@ namespace Umi.Dht.Client.Protocol;
 /// <summary>
 /// K-路由表
 /// </summary>
-public class KRouter
+public partial class KRouter
 {
-    private const int MAX_BUCKET_NODE = 10;
-
-    private readonly ConcurrentStack<KBucket> _buckets;
+    private readonly LinkedList<KBucket> _buckets;
 
     private readonly ReadOnlyMemory<byte> _currentNode;
 
@@ -27,22 +23,20 @@ public class KRouter
         _semaphore = new Semaphore(1, 1);
         _logger = provider.GetRequiredService<ILogger<KRouter>>();
         _currentNode = currentNode;
-        _buckets = new ConcurrentStack<KBucket>();
-        _buckets.Push(new KBucket
+        _buckets = [];
+        _buckets.AddLast(new KBucket
         {
-            BucketDistance = 0,
-            Nodes = []
+            BucketDistance = 0
         });
     }
 
 
     public bool HasNodeExists(ReadOnlySpan<byte> node)
     {
-        var distance = KBucket.ComputeDistances(_currentNode.Span, node);
-        var prefixLength = KBucket.PrefixLength(distance);
+        var distance = ComputeDistances(_currentNode.Span, node);
+        var prefixLength = PrefixLength(distance);
         var bucket = FindNestDistanceBucket(prefixLength);
-        var idBytes = node.ToArray();
-        return bucket.Nodes.Any(e => e.NodeID.Span.SequenceEqual(idBytes));
+        return bucket.Value.HasNode(node);
     }
 
     public int AddNode(NodeInfo node)
@@ -50,24 +44,17 @@ public class KRouter
         try
         {
             _semaphore.WaitOne();
-            var prefixLength = KBucket.PrefixLength(node.Distance);
-            var bucket = this.FindNestDistanceBucket(prefixLength);
-            bucket.InsertNode(node);
-            if (bucket.Nodes.Count > MAX_BUCKET_NODE && bucket.BucketDistance < 160)
-            {
-                if (_buckets.TryPeek(out var latest) && latest.BucketDistance == bucket.BucketDistance)
-                {
-                    _logger.LogTrace("Split K-Bucket and next length {len}", bucket.BucketDistance + 1);
-
-                    _buckets.Push(latest.SplitBucket(_currentNode.Span));
-                }
-            }
-
-            if (LatestPrefixLength < prefixLength)
-            {
-                LatestPrefixLength = prefixLength;
-            }
-
+            var prefixLength = PrefixLength(node.Distance);
+            var nearestBucket = this.FindNestDistanceBucket(prefixLength);
+            nearestBucket.Value.InsertNode(node);
+            // 这里判断 当前bucket 是否需要 分裂
+            if (nearestBucket.Value is not { Count: > KBucket.MAX_BUCKET_NODE, BucketDistance: < 160 })
+                return prefixLength;
+            // 再判断，路由表是否满了，路由表一共  160 个空间
+            _logger.LogDebug(" current k-bucket distance {distance}", nearestBucket.Value.BucketDistance);
+            if (nearestBucket.Next is null) return prefixLength; // 有下一个桶，说明已经分裂过了
+            var splitBucket = nearestBucket.Value.SplitBucket();
+            _buckets.AddLast(splitBucket);
             return prefixLength;
         }
         finally
@@ -76,17 +63,20 @@ public class KRouter
         }
     }
 
-    public int LatestPrefixLength { get; private set; } = 0;
 
-
-    public KBucket FindNestDistanceBucket(int prefixLength)
+    public KBucket GetNestDistanceBucket(int distance)
     {
-        using var enumerator = _buckets.GetEnumerator();
-        while (enumerator.MoveNext())
+        return FindNestDistanceBucket(distance).Value;
+    }
+
+
+    private LinkedListNode<KBucket> FindNestDistanceBucket(int prefixLength)
+    {
+        var listNode = _buckets.Last;
+        while (listNode is not null)
         {
-            if (enumerator.Current.BucketDistance > prefixLength)
-                continue;
-            return enumerator.Current;
+            if (listNode.Value.BucketDistance <= prefixLength) return listNode;
+            listNode = listNode.Previous;
         }
 
         // no found ? return the latest
@@ -96,48 +86,37 @@ public class KRouter
 
     public void AdjustNode(NodeInfo node)
     {
-        var prefixLength = KBucket.PrefixLength(node.Distance);
+        var prefixLength = PrefixLength(node.Distance);
         var k = FindNestDistanceBucket(prefixLength);
-        k.AdjustItem(node);
+        k.Value.AdjustItem(node);
     }
 
     public bool TryFoundNode(ReadOnlySpan<byte> node, [MaybeNullWhen(false)] out NodeInfo info)
     {
-        var distances = KBucket.ComputeDistances(node, _currentNode.Span);
-        var prefixLength = KBucket.PrefixLength(distances);
+        var distances = ComputeDistances(node, _currentNode.Span);
+        var prefixLength = PrefixLength(distances);
         var k = FindNestDistanceBucket(prefixLength);
-        var id = node.ToArray();
-        info = k.Nodes.FirstOrDefault(e => e.NodeID.Span.SequenceEqual(id));
+        info = k.Value[node];
         return info != null;
     }
 
     public IEnumerable<NodeInfo> FindNodeList(ReadOnlySpan<byte> target)
     {
-        var distances = KBucket.ComputeDistances(target, _currentNode.Span);
-        var bucket = this.FindNestDistanceBucket(KBucket.PrefixLength(distances));
-        return bucket.Nodes
-            .Take(8)
-            .ToArray();
+        var distances = ComputeDistances(target, _currentNode.Span);
+        var bucket = this.FindNestDistanceBucket(PrefixLength(distances));
+        return bucket.Value.Take(8);
     }
 
-
-    public long PeersCount
+    /// <summary>
+    /// 统计节点数
+    /// </summary>
+    public long NodeCount
     {
-        get { return _buckets.Aggregate<KBucket, long>(0, (current, bucket) => current + bucket.Nodes.Count); }
+        get { return _buckets.Sum(bucket => bucket.Count); }
     }
 
-    public string BucketCount
-    {
-        get
-        {
-            StringBuilder sb = new($"bucket count {_buckets.Count}\r\n");
-            foreach (var bucket in _buckets)
-            {
-                sb.Append(
-                    $"\tbucket prefix length {bucket.BucketDistance.ToString().PadLeft(3, '0')}, node count: {bucket.Nodes.Count}\r\n");
-            }
-
-            return sb.ToString();
-        }
-    }
+    /// <summary>
+    /// k桶数
+    /// </summary>
+    public long KBucketsCount => _buckets.Count;
 }
