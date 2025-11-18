@@ -1,6 +1,6 @@
 using System.Globalization;
-using System.IO.Pipelines;
 using System.Security.Cryptography;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -27,8 +27,24 @@ public class DistributedHashTableWorker(
         this.InitialCommand();
         // init node id
         var generator = RandomNumberGenerator.Create();
+        // 在当前文件夹内查找 缓存的node id
+        var hostEnvironment = provider.GetRequiredService<IHostEnvironment>();
+        var physicalPath = Path.Combine(hostEnvironment.ContentRootPath, ".nodeId");
+        var fileInfo = new FileInfo(physicalPath);
         Memory<byte> nodeId = new byte[20];
-        generator.GetBytes(nodeId.Span);
+        if (fileInfo.Exists)
+        {
+            using var nodeStream = fileInfo.OpenRead();
+            nodeStream.ReadExactly(nodeId.Span);
+        }
+        else
+        {
+            generator.GetBytes(nodeId.Span);
+            using var physicalStream = fileInfo.Create();
+            physicalStream.Write(nodeId.Span);
+            physicalStream.Flush();
+        }
+
         logger.LogTrace("generate node Id {nodeId}", BitConverter.ToString(nodeId.ToArray()).Replace("-", ""));
         _kademliaNode = new KademliaNode(nodeId, provider, kademliaConfig.Value);
         _kademliaNode.Start();
