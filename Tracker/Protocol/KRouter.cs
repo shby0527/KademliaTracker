@@ -26,7 +26,7 @@ public partial class KRouter
         _buckets = [];
         _buckets.AddLast(new KBucket
         {
-            BucketDistance = 0
+            BucketDistance = [0, 160]
         });
     }
 
@@ -48,13 +48,13 @@ public partial class KRouter
             var nearestBucket = this.FindNestDistanceBucket(prefixLength);
             nearestBucket.Value.InsertNode(node);
             // 这里判断 当前bucket 是否需要 分裂
-            if (nearestBucket.Value is not { Count: > KBucket.MAX_BUCKET_NODE, BucketDistance: < 160 })
+            if (nearestBucket.Value.Count <= KBucket.MAX_BUCKET_NODE)
                 return prefixLength;
             // 再判断，路由表是否满了，路由表一共  160 个空间
             _logger.LogDebug(" current k-bucket distance {distance}", nearestBucket.Value.BucketDistance);
-            if (nearestBucket.Next is not null) return prefixLength; // 有下一个桶，说明已经分裂过了
-            var splitBucket = nearestBucket.Value.SplitBucket();
-            _buckets.AddLast(splitBucket);
+            var splitSuccess = nearestBucket.Value.SplitBucket(out var splitBucket);
+            if (!splitSuccess || splitBucket is null) return prefixLength;
+            _buckets.AddAfter(nearestBucket, splitBucket);
             return prefixLength;
         }
         finally
@@ -72,15 +72,16 @@ public partial class KRouter
 
     private LinkedListNode<KBucket> FindNestDistanceBucket(int prefixLength)
     {
-        var listNode = _buckets.Last;
+        var listNode = _buckets.First;
         while (listNode is not null)
         {
-            if (listNode.Value.BucketDistance <= prefixLength) return listNode;
-            listNode = listNode.Previous;
+            if (prefixLength >= listNode.Value.BucketDistance[0] && prefixLength < listNode.Value.BucketDistance[1])
+                return listNode;
+            listNode = listNode.Next;
         }
 
         // no found ? return the latest
-        throw new UnreachableException("this can not happened");
+        return _buckets.Last!;
     }
 
 
@@ -105,6 +106,17 @@ public partial class KRouter
         var distances = ComputeDistances(target, _currentNode.Span);
         var bucket = this.FindNestDistanceBucket(PrefixLength(distances));
         return bucket.Value.Take(8);
+    }
+
+    public IDictionary<int[], long> GetRouterAvg()
+    {
+        Dictionary<int[], long> result = new Dictionary<int[], long>();
+        foreach (var node in _buckets)
+        {
+            result.Add(node.BucketDistance, node.Count);
+        }
+
+        return result;
     }
 
     /// <summary>

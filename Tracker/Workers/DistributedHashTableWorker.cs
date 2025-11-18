@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -58,6 +59,7 @@ public class DistributedHashTableWorker(
         _command.Add("get_peers", this.GetPeers);
         _command.Add("count", this.GetCount);
         _command.Add("listbtih", this.ListBitTorrentInfoHash);
+        _command.Add("avg", this.RouterNode);
     }
 
 
@@ -81,12 +83,27 @@ public class DistributedHashTableWorker(
                               arguments:
                                     type=<node|kBucket> count of type
                listbtih       list BitTorrent Info Hash and peers counts
+               avg            avg all count
                """;
     }
 
     private string ListBitTorrentInfoHash(IDictionary<string, string> dictionary)
     {
         return _kademliaNode?.ListBitTorrentInfoHash() ?? "error execute command";
+    }
+
+    private string RouterNode(IDictionary<string, string> arguments)
+    {
+        var routerAvg = _kademliaNode?.GetAvg();
+        if (routerAvg == null) return "router not available";
+        StringBuilder sb = new();
+        sb.AppendLine($"Bucket Count {routerAvg.BucketCount}");
+        foreach (var bh in routerAvg.Buckets)
+        {
+            sb.AppendLine($"\t\tBucket Distance {bh.Key[0]}-{bh.Key[1]}, Node Count {bh.Value}");
+        }
+
+        return sb.ToString();
     }
 
 

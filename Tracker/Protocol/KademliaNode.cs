@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Umi.Dht.Client.Configurations;
+using Umi.Dht.Client.Utils;
 
 namespace Umi.Dht.Client.Protocol;
 
@@ -502,7 +503,7 @@ public class KademliaNode
             };
             _kRouter.AddNode(node);
             _logger.LogInformation("now node count: {c}", _kRouter.NodeCount);
-            if (_kRouter.NodeCount < 300 && node.Distance > BigInteger.Zero)
+            if (_kRouter.NodeCount < 3000 && node.Distance > BigInteger.Zero)
             {
                 SendPackage(new IPEndPoint(itemIP, port),
                     KademliaProtocols.FindNode(CLIENT_NODE_ID.Span, CLIENT_NODE_ID.Span));
@@ -568,6 +569,17 @@ public class KademliaNode
     public string GetBucketCount()
     {
         return _kRouter.KBucketsCount.ToString();
+    }
+
+    public RouterAvg GetAvg()
+    {
+        RouterAvg avg = new RouterAvg
+        {
+            BucketCount = _kRouter.KBucketsCount,
+            Buckets = _kRouter.GetRouterAvg()
+        };
+
+        return avg;
     }
 
     public string ListBitTorrentInfoHash()
