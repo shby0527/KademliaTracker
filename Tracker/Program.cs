@@ -33,6 +33,7 @@ public static class Program
         rootLogger.Log(LogLevel.Debug, "Umi Distributed Hash Table Tracker Starting, version: 1.0.0");
         // 开始创建 Host
         var host = new HostBuilder()
+            .UseEnvironment(Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? "Production")
             .UseContentRoot(Directory.GetCurrentDirectory())
             .ConfigureHostConfiguration(ConfigureHostConfigurationBuilder(args))
             .ConfigureAppConfiguration(ConfigureAppConfigurationBuilder(args))

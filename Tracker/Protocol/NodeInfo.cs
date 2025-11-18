@@ -17,9 +17,9 @@ public class NodeInfo
 
     public required BigInteger Distance { get; init; }
 
-    public required IPAddress NodeAddress { get; init; }
+    public required IPAddress NodeAddress { get; set; }
 
-    public int NodePort { get; init; }
+    public int NodePort { get; set; }
 
     public DateTimeOffset LatestAccessTime { get; private set; } = DateTimeOffset.UtcNow;
 

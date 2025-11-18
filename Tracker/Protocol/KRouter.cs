@@ -52,7 +52,7 @@ public partial class KRouter
                 return prefixLength;
             // 再判断，路由表是否满了，路由表一共  160 个空间
             _logger.LogDebug(" current k-bucket distance {distance}", nearestBucket.Value.BucketDistance);
-            if (nearestBucket.Next is null) return prefixLength; // 有下一个桶，说明已经分裂过了
+            if (nearestBucket.Next is not null) return prefixLength; // 有下一个桶，说明已经分裂过了
             var splitBucket = nearestBucket.Value.SplitBucket();
             _buckets.AddLast(splitBucket);
             return prefixLength;

@@ -257,11 +257,13 @@ public class KademliaNode
     {
         _logger.LogTrace("received ping response");
         if (response.Response == null) return;
-        if (remote is not IPEndPoint) return;
+        if (remote is not IPEndPoint ip) return;
         var dictionary = response.Response;
         ReadOnlySpan<byte> nodeId = (byte[])dictionary["id"];
         if (_kRouter.TryFoundNode(nodeId, out var node))
         {
+            node.NodeAddress = ip.Address;
+            node.NodePort = ip.Port;
             _kRouter.AdjustNode(node);
         }
     }
@@ -498,10 +500,9 @@ public class KademliaNode
                 NodeAddress = itemIP,
                 NodePort = port
             };
-            var prefixLength = _kRouter.AddNode(node);
+            _kRouter.AddNode(node);
             _logger.LogInformation("now node count: {c}", _kRouter.NodeCount);
-            if (_kRouter.NodeCount <= 15000
-                && node.Distance > BigInteger.Zero)
+            if (_kRouter.NodeCount < 300 && node.Distance > BigInteger.Zero)
             {
                 SendPackage(new IPEndPoint(itemIP, port),
                     KademliaProtocols.FindNode(CLIENT_NODE_ID.Span, CLIENT_NODE_ID.Span));

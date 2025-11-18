@@ -36,6 +36,12 @@ public class KBucket
         {
             _semaphore.WaitOne();
             _nodeInfo.AddFirst(node);
+            // remove the last if max bucket
+            if (_nodeInfo.Count > KBucket.MAX_BUCKET_NODE * 3)
+            {
+                var last = _nodeInfo.Last;
+                if (last is not null) _nodeInfo.Remove(last);
+            }
         }
         finally
         {
