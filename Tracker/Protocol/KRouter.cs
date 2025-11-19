@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,7 +8,7 @@ namespace Umi.Dht.Client.Protocol;
 /// <summary>
 /// K-路由表
 /// </summary>
-public partial class KRouter
+public partial class KRouter : IDisposable
 {
     private readonly LinkedList<KBucket> _buckets;
 
@@ -19,16 +18,21 @@ public partial class KRouter
 
     private readonly Semaphore _semaphore;
 
+    private readonly Timer _refreshBucketTimer;
+
     public KRouter(ReadOnlyMemory<byte> currentNode, IServiceProvider provider)
     {
         _semaphore = new Semaphore(1, 1);
         _logger = provider.GetRequiredService<ILogger<KRouter>>();
         _currentNode = currentNode;
         _buckets = [];
-        _buckets.AddLast(new KBucket
+        var bucket = new KBucket
         {
             BucketDistance = [0, BigInteger.One << 160]
-        });
+        };
+        bucket.UnhealthNodeChecker += OnUnhealthNodeChecked;
+        _buckets.AddLast(bucket);
+        _refreshBucketTimer = new Timer(this.CheckBuckets, this, TimeSpan.FromMinutes(15), TimeSpan.FromMinutes(15));
     }
 
 
@@ -55,6 +59,7 @@ public partial class KRouter
             _logger.LogDebug(" current k-bucket distance {distance}", nearestBucket.Value.BucketDistance);
             var splitSuccess = nearestBucket.Value.SplitBucket(out var splitBucket);
             if (!splitSuccess || splitBucket is null) return prefixLength;
+            splitBucket.UnhealthNodeChecker += OnUnhealthNodeChecked;
             _buckets.AddAfter(nearestBucket, splitBucket);
             return prefixLength;
         }
@@ -130,4 +135,51 @@ public partial class KRouter
     /// k桶数
     /// </summary>
     public long KBucketsCount => _buckets.Count;
+
+
+    private void CheckBuckets(object? stats)
+    {
+        var node = _buckets.First;
+        while (node is not null)
+        {
+            if (!node.Value.IsFresh)
+            {
+                node.Value.Refresh();
+                this.BuckerRefreshing?.Invoke(this, node.Value);
+            }
+
+            node = node.Next;
+        }
+    }
+
+    public void Dispose()
+    {
+        _semaphore.Dispose();
+        _refreshBucketTimer.Dispose();
+        var node = _buckets.First;
+        while (node is not null)
+        {
+            node.Value.UnhealthNodeChecker -= OnUnhealthNodeChecked;
+            node.Value.Dispose();
+            var next = node.Next;
+            _buckets.Remove(node);
+            node = next;
+        }
+    }
+
+    /// <summary>
+    /// only event transfer , 事件转发
+    /// </summary>
+    /// <param name="bucket"></param>
+    /// <param name="node"></param>
+    private void OnUnhealthNodeChecked(KBucket bucket, NodeInfo node)
+    {
+        this.UnhealthNodeChecker?.Invoke(bucket, node);
+    }
+
+    public event NodeCheckerEventHandler? UnhealthNodeChecker;
+
+    public event BucketRefreshEventHandler? BuckerRefreshing;
 }
+
+public delegate void BucketRefreshEventHandler(KRouter sender, KBucket bucket);

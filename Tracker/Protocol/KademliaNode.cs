@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Net;
 using System.Net.Sockets;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -51,6 +52,8 @@ public class KademliaNode
         _kRouter = new KRouter(nodeId, provider);
         _environment = provider.GetRequiredService<IHostEnvironment>();
         _torrentInfoHashManager = new BitTorrentInfoHashManager(provider);
+        _kRouter.BuckerRefreshing += this.OnBucketRefresh;
+        _kRouter.UnhealthNodeChecker += this.OnNodeCheckPing;
         _eventMap = new Dictionary<string, Action<KRpcPackage, KRpcPackage, EndPoint>>()
         {
             { "find_node", OnFindNodeResponse },
@@ -265,6 +268,7 @@ public class KademliaNode
         {
             node.NodeAddress = ip.Address;
             node.NodePort = ip.Port;
+            node.Refresh();
             _kRouter.AdjustNode(node);
         }
     }
@@ -593,9 +597,24 @@ public class KademliaNode
         return sb.ToString();
     }
 
+    private void OnBucketRefresh(KRouter router, KBucket bucket)
+    {
+        _logger.LogDebug("bucket {dists}-{diste} refreshing", bucket.BucketDistance[0], bucket.BucketDistance[1]);
+    }
+
+    private void OnNodeCheckPing(KBucket bucket, NodeInfo node)
+    {
+        _logger.LogTrace("start node check ping, id {id}", node.NodeId);
+        var pingPackage = node.GeneratePingPackage();
+        SendPackage(new IPEndPoint(node.NodeAddress, node.NodePort), pingPackage);
+    }
+
     public void Stop()
     {
         _logger.LogTrace("Node Stopping");
+        _kRouter.BuckerRefreshing -= OnBucketRefresh;
+        _kRouter.UnhealthNodeChecker -= OnNodeCheckPing;
+        _kRouter.Dispose();
         _receivedEventArgs.Completed -= this.OnReceived;
         _receivedEventArgs.Dispose();
         _socket.Close();

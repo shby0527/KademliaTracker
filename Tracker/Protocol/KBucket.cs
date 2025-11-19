@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 
@@ -7,7 +6,7 @@ namespace Umi.Dht.Client.Protocol;
 /// <summary>
 /// Kademlia K-Bucket
 /// </summary>
-public class KBucket
+public class KBucket : IDisposable
 {
     public const int MAX_BUCKET_NODE = 20;
 
@@ -16,6 +15,17 @@ public class KBucket
     private readonly LinkedList<NodeInfo> _nodeInfo = [];
 
     private readonly Semaphore _semaphore = new(1, 1);
+
+    private DateTimeOffset _latestUpdateTime = DateTimeOffset.UtcNow;
+
+    public bool IsFresh => _latestUpdateTime + TimeSpan.FromMinutes(15) < DateTimeOffset.UtcNow;
+
+    private readonly Timer _nodeChecker;
+
+    public KBucket()
+    {
+        _nodeChecker = new Timer(this.CheckNode, this, TimeSpan.FromMinutes(15), TimeSpan.FromMinutes(15));
+    }
 
 
     public NodeInfo? this[ReadOnlySpan<byte> id]
@@ -44,6 +54,8 @@ public class KBucket
                 var last = _nodeInfo.Last;
                 if (last is not null) _nodeInfo.Remove(last);
             }
+
+            _latestUpdateTime = DateTimeOffset.UtcNow;
         }
         finally
         {
@@ -61,6 +73,7 @@ public class KBucket
             if (node is null) return;
             _nodeInfo.Remove(node);
             _nodeInfo.AddFirst(node);
+            _latestUpdateTime = DateTimeOffset.UtcNow;
         }
         finally
         {
@@ -95,6 +108,7 @@ public class KBucket
                 bucket._nodeInfo.AddLast(current);
             }
 
+            _latestUpdateTime = DateTimeOffset.UtcNow;
             return true;
         }
         finally
@@ -110,4 +124,40 @@ public class KBucket
     }
 
     public long Count => _nodeInfo.Count;
+
+    private void CheckNode(object? stats)
+    {
+        var node = _nodeInfo.First;
+        while (node is not null)
+        {
+            if (node.Value is { Healthy: NodeHealth.Questionable })
+            {
+                // 需要发送ping 确认的节点, 由事件处理
+                this.UnhealthNodeChecker?.Invoke(this, node.Value);
+            }
+
+            node = node.Next;
+        }
+    }
+
+    public void Dispose()
+    {
+        _semaphore.Dispose();
+        _nodeChecker.Dispose();
+    }
+
+    public void Refresh()
+    {
+        // 对所有节点 发送 ping
+        var node = _nodeInfo.First;
+        while (node is not null)
+        {
+            this.UnhealthNodeChecker?.Invoke(this, node.Value);
+            node = node.Next;
+        }
+    }
+
+    public event NodeCheckerEventHandler? UnhealthNodeChecker;
 }
+
+public delegate void NodeCheckerEventHandler(KBucket bucket, NodeInfo node);
