@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
 
 namespace Umi.Dht.Client.Protocol;
 
@@ -10,8 +11,7 @@ public class KBucket
 {
     public const int MAX_BUCKET_NODE = 20;
 
-
-    public required int[] BucketDistance { get; init; }
+    public required BigInteger[] BucketDistance { get; init; }
 
     private readonly LinkedList<NodeInfo> _nodeInfo = [];
 
@@ -76,21 +76,20 @@ public class KBucket
         try
         {
             _semaphore.WaitOne();
-            int maxPrefixLength = this.BucketDistance[1];
-            if (this.BucketDistance[0] == maxPrefixLength / 2) return false;
-            this.BucketDistance[1] = maxPrefixLength / 2;
+            BigInteger maxDist = this.BucketDistance[1];
+            if (this.BucketDistance[0] == maxDist / 2) return false;
+            this.BucketDistance[1] = maxDist / 2;
             // 基础判断
             bucket = new KBucket
             {
-                BucketDistance = [maxPrefixLength / 2, maxPrefixLength],
+                BucketDistance = [maxDist / 2, maxDist],
             };
             var node = _nodeInfo.First;
             while (node is not null)
             {
                 var current = node;
                 node = current.Next;
-                var prefixLength = KRouter.PrefixLength(current.Value.Distance);
-                if (prefixLength >= this.BucketDistance[0] && prefixLength < this.BucketDistance[1])
+                if (current.Value.Distance >= this.BucketDistance[0] && current.Value.Distance < this.BucketDistance[1])
                     continue; // else case , 无操作，节点留在当前
                 _nodeInfo.Remove(current);
                 bucket._nodeInfo.AddLast(current);

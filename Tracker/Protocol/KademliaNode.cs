@@ -550,7 +550,7 @@ public class KademliaNode
     {
         // 计算距离
         var distances = KRouter.ComputeDistances(infoHash, CLIENT_NODE_ID.Span);
-        var bucket = _kRouter.GetNestDistanceBucket(KRouter.PrefixLength(distances));
+        var bucket = _kRouter.GetNestDistanceBucket(distances);
         // 找到top8
         var infos = bucket.Take(8);
         foreach (var info in infos)

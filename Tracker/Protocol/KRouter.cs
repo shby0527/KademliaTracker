@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -26,7 +27,7 @@ public partial class KRouter
         _buckets = [];
         _buckets.AddLast(new KBucket
         {
-            BucketDistance = [0, 160]
+            BucketDistance = [0, BigInteger.One << 160]
         });
     }
 
@@ -34,8 +35,7 @@ public partial class KRouter
     public bool HasNodeExists(ReadOnlySpan<byte> node)
     {
         var distance = ComputeDistances(_currentNode.Span, node);
-        var prefixLength = PrefixLength(distance);
-        var bucket = FindNestDistanceBucket(prefixLength);
+        var bucket = FindNestDistanceBucket(distance);
         return bucket.Value.HasNode(node);
     }
 
@@ -44,11 +44,12 @@ public partial class KRouter
         try
         {
             _semaphore.WaitOne();
+            var nearestBucket = this.FindNestDistanceBucket(node.Distance);
             var prefixLength = PrefixLength(node.Distance);
-            var nearestBucket = this.FindNestDistanceBucket(prefixLength);
             nearestBucket.Value.InsertNode(node);
             // 这里判断 当前bucket 是否需要 分裂
-            if (nearestBucket.Value.Count <= KBucket.MAX_BUCKET_NODE)
+            if (nearestBucket.Value.Count <= KBucket.MAX_BUCKET_NODE &&
+                ReferenceEquals(nearestBucket.Value, _buckets.First!.Value))
                 return prefixLength;
             // 再判断，路由表是否满了，路由表一共  160 个空间
             _logger.LogDebug(" current k-bucket distance {distance}", nearestBucket.Value.BucketDistance);
@@ -64,18 +65,18 @@ public partial class KRouter
     }
 
 
-    public KBucket GetNestDistanceBucket(int distance)
+    public KBucket GetNestDistanceBucket(BigInteger distance)
     {
         return FindNestDistanceBucket(distance).Value;
     }
 
 
-    private LinkedListNode<KBucket> FindNestDistanceBucket(int prefixLength)
+    private LinkedListNode<KBucket> FindNestDistanceBucket(BigInteger dist)
     {
         var listNode = _buckets.First;
         while (listNode is not null)
         {
-            if (prefixLength >= listNode.Value.BucketDistance[0] && prefixLength < listNode.Value.BucketDistance[1])
+            if (dist >= listNode.Value.BucketDistance[0] && dist < listNode.Value.BucketDistance[1])
                 return listNode;
             listNode = listNode.Next;
         }
@@ -87,16 +88,14 @@ public partial class KRouter
 
     public void AdjustNode(NodeInfo node)
     {
-        var prefixLength = PrefixLength(node.Distance);
-        var k = FindNestDistanceBucket(prefixLength);
+        var k = FindNestDistanceBucket(node.Distance);
         k.Value.AdjustItem(node);
     }
 
     public bool TryFoundNode(ReadOnlySpan<byte> node, [MaybeNullWhen(false)] out NodeInfo info)
     {
         var distances = ComputeDistances(node, _currentNode.Span);
-        var prefixLength = PrefixLength(distances);
-        var k = FindNestDistanceBucket(prefixLength);
+        var k = FindNestDistanceBucket(distances);
         info = k.Value[node];
         return info != null;
     }
@@ -104,7 +103,7 @@ public partial class KRouter
     public IEnumerable<NodeInfo> FindNodeList(ReadOnlySpan<byte> target)
     {
         var distances = ComputeDistances(target, _currentNode.Span);
-        var bucket = this.FindNestDistanceBucket(PrefixLength(distances));
+        var bucket = this.FindNestDistanceBucket(distances);
         return bucket.Value.Take(8);
     }
 
@@ -113,7 +112,7 @@ public partial class KRouter
         Dictionary<int[], long> result = new Dictionary<int[], long>();
         foreach (var node in _buckets)
         {
-            result.Add(node.BucketDistance, node.Count);
+            result.Add([PrefixLength(node.BucketDistance[0]), PrefixLength(node.BucketDistance[1])], node.Count);
         }
 
         return result;
