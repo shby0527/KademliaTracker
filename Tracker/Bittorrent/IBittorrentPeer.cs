@@ -2,15 +2,13 @@ using Umi.Dht.Client.Protocol;
 
 namespace Umi.Dht.Client.Bittorrent;
 
-public interface IBittorrentPeer
+public interface IBittorrentPeer : IPeer
 {
-    IPeer Peer { get; }
-
     bool IsConnected { get; }
 
     void Connect();
 
     void Disconnect();
 
-    ReadOnlySpan<byte> GetHashMetadata();
+    ReadOnlySpan<byte> GetHashMetadata(long piece);
 }

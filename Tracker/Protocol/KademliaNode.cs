@@ -3,7 +3,6 @@ using System.Collections.Immutable;
 using System.Net;
 using System.Net.Sockets;
 using System.Numerics;
-using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -83,6 +82,11 @@ public class KademliaNode
         _timer = new Timer(_ => this.CheckPackageALive(), null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
     }
 
+
+    public void ReBootstrap()
+    {
+        this.Initial();
+    }
 
     private void Initial()
     {
@@ -251,7 +255,6 @@ public class KademliaNode
             }
 
             torrentInfoHash.AddPeers(p);
-            torrentInfoHash.BeginGetMetadata();
         }
     }
 
@@ -507,7 +510,7 @@ public class KademliaNode
             };
             _kRouter.AddNode(node);
             _logger.LogInformation("now node count: {c}", _kRouter.NodeCount);
-            if (_kRouter.NodeCount < 3000 && node.Distance > BigInteger.Zero)
+            if (_kRouter.NodeCount < 1350 && node.Distance > BigInteger.Zero)
             {
                 SendPackage(new IPEndPoint(itemIP, port),
                     KademliaProtocols.FindNode(CLIENT_NODE_ID.Span, CLIENT_NODE_ID.Span));
@@ -600,6 +603,13 @@ public class KademliaNode
     private void OnBucketRefresh(KRouter router, KBucket bucket)
     {
         _logger.LogDebug("bucket {dists}-{diste} refreshing", bucket.BucketDistance[0], bucket.BucketDistance[1]);
+        ThreadPool.QueueUserWorkItem(_ => _torrentInfoHashManager.TryReceiveInfoHashMetadata());
+    }
+
+    public void QueueReceiveInfoHashMetadata()
+    {
+        _logger.LogDebug("begin receiving  info hash metadata, total {t}", _torrentInfoHashManager.Count);
+        ThreadPool.QueueUserWorkItem(_ => _torrentInfoHashManager.TryReceiveInfoHashMetadata());
     }
 
     private void OnNodeCheckPing(KBucket bucket, NodeInfo node)

@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
+using System.Numerics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -14,9 +15,9 @@ public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<
 
     private readonly Dictionary<string, IBitTorrentInfoHash> _bitTorrentInfo = new();
 
-
     public IBitTorrentInfoHash this[string btih] => _bitTorrentInfo[btih];
 
+    public int Count => _bitTorrentInfo.Count;
 
     public IBitTorrentInfoHash AddBitTorrentInfoHash(ReadOnlySpan<byte> infoHash)
     {
@@ -30,7 +31,6 @@ public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<
         }
     }
 
-
     public bool TryGetBitTorrentInfoHash(string btih, [MaybeNullWhen(false)] out IBitTorrentInfoHash bitTorrentInfoHash)
     {
         _logger.LogTrace("try get btih {btih} info", btih);
@@ -42,15 +42,32 @@ public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<
         return new PeerInfoPrivateTracker(address, port, node);
     }
 
+    public void TryReceiveInfoHashMetadata()
+    {
+        // 尝试开始获取info hash 的 metadata， 可能的
+        foreach (var hash in _bitTorrentInfo)
+        {
+            if (hash.Value.HasMetadataReceived) continue;
+            hash.Value.BeginGetMetadata();
+        }
+    }
+
+
     private class BitTorrentInfoHashPrivateTracker(byte[] btih) : IBitTorrentInfoHash
     {
         private readonly ReadOnlyMemory<byte> _btih = btih;
 
         private readonly List<IPeer> _peers = [];
 
+        private bool _hasMetadataReceived = false;
+
+        private long _pieceSize = 0;
+
+        private long _pieceCount = 0;
+
         public string HashText => BitConverter.ToString(btih).Replace("-", "");
         public ReadOnlySpan<byte> Hash => _btih.Span;
-        public int MaxDistance { get; private set; } = 0;
+        public BigInteger MaxDistance { get; private set; } = 0;
 
         public IReadOnlyList<IPeer> Peers => _peers.ToImmutableList();
 
@@ -62,9 +79,8 @@ public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<
             {
                 _semaphore.WaitOne();
                 var distances = KRouter.ComputeDistances(node.NodeId.Span, btih);
-                var prefixLength = KRouter.PrefixLength(distances);
-                if (MaxDistance > prefixLength) return false;
-                MaxDistance = prefixLength;
+                if (MaxDistance > distances) return false;
+                MaxDistance = distances;
                 return true;
             }
             finally
@@ -75,12 +91,53 @@ public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<
 
         public void AddPeers(IEnumerable<IPeer> peers)
         {
-            _peers.AddRange(peers);
+            foreach (var peer in peers)
+            {
+                if (!_peers.Exists(e => e.Equals(peer)))
+                {
+                    _peers.Add(peer);
+                }
+            }
         }
+
+        public long MetadataPieceCount
+        {
+            get
+            {
+                if (!_hasMetadataReceived)
+                {
+                    throw new InvalidOperationException("metadata has not been received");
+                }
+
+                return _pieceCount;
+            }
+        }
+
+        public long PieceSize
+        {
+            get
+            {
+                if (!_hasMetadataReceived)
+                {
+                    throw new InvalidOperationException("metadata has not been received");
+                }
+
+                return _pieceSize;
+            }
+        }
+
+        public bool HasMetadataReceived => _hasMetadataReceived;
 
         public void BeginGetMetadata()
         {
-            
+            if (_peers.Count == 0)
+            {
+                return;
+            }
+
+            // 这里开始获取相关属性
+            //
+            _hasMetadataReceived = true;
         }
     }
 
@@ -89,6 +146,12 @@ public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<
         public NodeInfo Node => node;
         public IPAddress Address => address;
         public int Port => port;
+
+        public bool Equals(IPeer? other)
+        {
+            if (other is null) return false;
+            return this.Address.Equals(other.Address) && this.Port == other.Port;
+        }
     }
 
     public IEnumerator<IBitTorrentInfoHash> GetEnumerator()
@@ -104,11 +167,13 @@ public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<
 
 public interface IBitTorrentInfoHash
 {
+    bool HasMetadataReceived { get; }
+
     string HashText { get; }
 
     ReadOnlySpan<byte> Hash { get; }
 
-    int MaxDistance { get; }
+    BigInteger MaxDistance { get; }
 
     IReadOnlyList<IPeer> Peers { get; }
 
@@ -116,10 +181,14 @@ public interface IBitTorrentInfoHash
 
     void AddPeers(IEnumerable<IPeer> peers);
 
+    public long MetadataPieceCount { get; }
+
+    public long PieceSize { get; }
+
     void BeginGetMetadata();
 }
 
-public interface IPeer
+public interface IPeer : IEquatable<IPeer>
 {
     NodeInfo Node { get; }
 

@@ -60,6 +60,8 @@ public class DistributedHashTableWorker(
         _command.Add("count", this.GetCount);
         _command.Add("listbtih", this.ListBitTorrentInfoHash);
         _command.Add("avg", this.RouterNode);
+        _command.Add("get_metadata", this.GetMetadata);
+        _command.Add("rebootstrap", this.ReBootstrap);
     }
 
 
@@ -79,17 +81,25 @@ public class DistributedHashTableWorker(
                get_peers      send get peers package
                               arguments:
                                     hash=<value>    sending parameters
+               rebootstrap    retry bootstarp
                count          get type count
                               arguments:
                                     type=<node|kBucket> count of type
                listbtih       list BitTorrent Info Hash and peers counts
                avg            avg all count
+               get_metadata   begin get all bt info hash metadata
                """;
     }
 
     private string ListBitTorrentInfoHash(IDictionary<string, string> dictionary)
     {
         return _kademliaNode?.ListBitTorrentInfoHash() ?? "error execute command";
+    }
+
+    private string ReBootstrap(IDictionary<string, string> arguments)
+    {
+        _kademliaNode?.ReBootstrap();
+        return "reBootstrapping";
     }
 
     private string RouterNode(IDictionary<string, string> arguments)
@@ -104,6 +114,12 @@ public class DistributedHashTableWorker(
         }
 
         return sb.ToString();
+    }
+
+    private string GetMetadata(IDictionary<string, string> arguments)
+    {
+        _kademliaNode?.QueueReceiveInfoHashMetadata();
+        return "Now, getting metadata";
     }
 
 
