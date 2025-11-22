@@ -110,7 +110,7 @@ public static class BEncoder
         return bytes.ToArray();
     }
 
-    public static int BDecodeToInteger(ref ReadOnlySpan<byte>.Enumerator chars)
+    public static long BDecodeToInteger(ref ReadOnlySpan<byte>.Enumerator chars)
     {
         if (chars.Current != I) throw new FormatException("can not convert to integer");
         StringBuilder number = new();
@@ -119,7 +119,7 @@ public static class BEncoder
             number.Append(Encoding.ASCII.GetString([chars.Current]));
         }
 
-        if (!int.TryParse(number.ToString(), out var i))
+        if (!long.TryParse(number.ToString(), out var i))
         {
             throw new FormatException("can not convert to integer");
         }
@@ -127,7 +127,7 @@ public static class BEncoder
         return i;
     }
 
-    public static ReadOnlySpan<byte> BEncode(int number)
+    public static ReadOnlySpan<byte> BEncode(long number)
     {
         return Encoding.ASCII.GetBytes($"i{number}e");
     }
@@ -169,6 +169,7 @@ public static class BEncoder
     {
         return o switch
         {
+            long value => BEncode(value),
             int value => BEncode(value),
             string str => BEncode(Encoding.ASCII.GetBytes(str)),
             ReadOnlyMemory<byte> b => BEncode(b.Span),
