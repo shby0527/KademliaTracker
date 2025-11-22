@@ -1,5 +1,4 @@
-﻿using System.Numerics;
-using System.Reflection;
+﻿using System.Reflection;
 using Autofac;
 using Autofac.Core;
 using Autofac.Extensions.DependencyInjection;
@@ -29,7 +28,7 @@ public static class Program
         var logFactory = LogManager.Setup()
             .LoadConfigurationFromFile(fullPathConfig)
             .LogFactory;
-        var rootLogger = logFactory.GetLogger(typeof(Program).FullName);
+        var rootLogger = logFactory.GetLogger(typeof(Program).FullName!);
         rootLogger.Log(LogLevel.Debug, "Umi Distributed Hash Table Tracker Starting, version: 1.0.0");
         // 开始创建 Host
         var host = new HostBuilder()

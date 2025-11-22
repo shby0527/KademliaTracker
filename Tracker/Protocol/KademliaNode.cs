@@ -8,6 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Umi.Dht.Client.Configurations;
+using Umi.Dht.Client.TorrentIO;
+using Umi.Dht.Client.TorrentIO.StorageInfo;
 using Umi.Dht.Client.Utils;
 
 namespace Umi.Dht.Client.Protocol;
@@ -36,12 +38,11 @@ public class KademliaNode
 
     private readonly ImmutableDictionary<string, Action<KRpcPackage, KRpcPackage, EndPoint>> _eventMap;
 
-
     private readonly ImmutableDictionary<string, Action<KRpcPackage, EndPoint>> _eventRequestMap;
 
     private Timer? _timer;
 
-    private readonly Semaphore _fileWrite = new(1, 1);
+    private readonly IMagnetLinkStorage? _magnetLinkStorage;
 
     public KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider, KademliaConfig config)
     {
@@ -50,6 +51,7 @@ public class KademliaNode
         _logger = provider.GetRequiredService<ILogger<KademliaNode>>();
         _kRouter = new KRouter(nodeId, provider);
         _environment = provider.GetRequiredService<IHostEnvironment>();
+        _magnetLinkStorage = provider.GetService<IMagnetLinkStorage>();
         _torrentInfoHashManager = new BitTorrentInfoHashManager(provider);
         _kRouter.BuckerRefreshing += this.OnBucketRefresh;
         _kRouter.UnhealthNodeChecker += this.OnNodeCheckPing;
@@ -320,26 +322,13 @@ public class KademliaNode
             SendGetPeers(hash);
         }
 
-        var semaphore = _fileWrite;
         var magnetLink = $"magnet:?xt=urn:btih:{BitConverter.ToString(hash.ToArray()).Replace("-", "")}";
         _logger.LogTrace("found magnet link {link}", magnetLink);
-        try
+        var magnetInfo = new MagnetInfo
         {
-            semaphore.WaitOne();
-            var info = _environment.ContentRootFileProvider.GetFileInfo("bt/magnet.txt");
-            var outfile = info.PhysicalPath!;
-            FileInfo fileInfo = new(outfile);
-            if (!(fileInfo.Directory?.Exists ?? true))
-            {
-                fileInfo.Directory?.Create();
-            }
-
-            File.AppendAllLines(outfile, [magnetLink]);
-        }
-        finally
-        {
-            semaphore.Release();
-        }
+            Hash = hash
+        };
+        _magnetLinkStorage?.StoreMagnet(magnetInfo);
     }
 
     private void OnAnnouncePeerRequest(
@@ -370,26 +359,13 @@ public class KademliaNode
 
         infoHash.AnnounceNode(node!);
 
-        var semaphore = _fileWrite;
         var magnetLink = $"magnet:?xt=urn:btih:{BitConverter.ToString(hash.ToArray()).Replace("-", "")}";
         _logger.LogTrace("found magnet link {link}", magnetLink);
-        try
+        var magnetInfo = new MagnetInfo
         {
-            semaphore.WaitOne();
-            var info = _environment.ContentRootFileProvider.GetFileInfo("bt/magnet.txt");
-            var outfile = info.PhysicalPath!;
-            FileInfo fileInfo = new(outfile);
-            if (!(fileInfo.Directory?.Exists ?? true))
-            {
-                fileInfo.Directory?.Create();
-            }
-
-            File.AppendAllLines(outfile, [magnetLink]);
-        }
-        finally
-        {
-            semaphore.Release();
-        }
+            Hash = hash
+        };
+        _magnetLinkStorage?.StoreMagnet(magnetInfo);
 
         _logger.LogTrace("announce response, transaction {tr}", request.FormattedTransaction);
         SendPackage(ip, KademliaProtocols.PingResponse(CLIENT_NODE_ID.Span, request.TransactionId));

@@ -8,6 +8,7 @@ public interface IBittorrentPeer : IPeer
 
     void Connect();
 
+
     void Disconnect();
 
     ReadOnlySpan<byte> GetHashMetadata(long piece);
