@@ -16,6 +16,8 @@ namespace Umi.Dht.Client.Protocol;
 
 public class KademliaNode
 {
+    private bool _isStopped = false;
+
     private readonly ReadOnlyMemory<byte> CLIENT_NODE_ID;
 
     private readonly ILogger<KademliaNode> _logger;
@@ -112,6 +114,7 @@ public class KademliaNode
 
     private void BeginReceive()
     {
+        if (_isStopped) return;
         _receivedEventArgs.RemoteEndPoint = new IPEndPoint(IPAddress.Any, 0);
         if (_socket.ReceiveFromAsync(_receivedEventArgs)) return;
         _logger.LogTrace("already received");
@@ -579,7 +582,6 @@ public class KademliaNode
     private void OnBucketRefresh(KRouter router, KBucket bucket)
     {
         _logger.LogDebug("bucket {dists}-{diste} refreshing", bucket.BucketDistance[0], bucket.BucketDistance[1]);
-        ThreadPool.QueueUserWorkItem(_ => _torrentInfoHashManager.TryReceiveInfoHashMetadata());
     }
 
     public void QueueReceiveInfoHashMetadata()
@@ -601,10 +603,12 @@ public class KademliaNode
         _kRouter.BuckerRefreshing -= OnBucketRefresh;
         _kRouter.UnhealthNodeChecker -= OnNodeCheckPing;
         _kRouter.Dispose();
+        _torrentInfoHashManager.Dispose();
         _receivedEventArgs.Completed -= this.OnReceived;
         _receivedEventArgs.Dispose();
         _socket.Close();
         _socket.Dispose();
         _timer?.Dispose();
+        _isStopped = true;
     }
 }

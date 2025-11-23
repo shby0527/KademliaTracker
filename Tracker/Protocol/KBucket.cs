@@ -18,7 +18,7 @@ public class KBucket : IDisposable
 
     private DateTimeOffset _latestUpdateTime = DateTimeOffset.UtcNow;
 
-    public bool IsFresh => _latestUpdateTime + TimeSpan.FromMinutes(15) < DateTimeOffset.UtcNow;
+    public bool IsFresh => _latestUpdateTime + TimeSpan.FromMinutes(15) > DateTimeOffset.UtcNow;
 
     private readonly Timer _nodeChecker;
 

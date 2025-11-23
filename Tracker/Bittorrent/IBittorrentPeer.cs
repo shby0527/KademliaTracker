@@ -1,15 +1,19 @@
 using Umi.Dht.Client.Protocol;
+using Umi.Dht.Client.TorrentIO.StorageInfo;
 
 namespace Umi.Dht.Client.Bittorrent;
 
-public interface IBittorrentPeer : IPeer
+public interface IBittorrentPeer : IPeer, IDisposable
 {
     bool IsConnected { get; }
 
-    void Connect();
+    Task Connect();
 
+    Task Disconnect();
 
-    void Disconnect();
+    Task<MetadataPiece> MetadataHandshake();
 
-    ReadOnlySpan<byte> GetHashMetadata(long piece);
+    Task<IEnumerable<IPeer>> PeersExchange();
+
+    ValueTask<ReadOnlyMemory<byte>> GetHashMetadata(long piece);
 }

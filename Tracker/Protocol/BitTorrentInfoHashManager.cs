@@ -5,10 +5,12 @@ using System.Net;
 using System.Numerics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Umi.Dht.Client.Bittorrent;
+using Umi.Dht.Client.TorrentIO.StorageInfo;
 
 namespace Umi.Dht.Client.Protocol;
 
-public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<IBitTorrentInfoHash>
+public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<IBitTorrentInfoHash>, IDisposable
 {
     private readonly ILogger<BitTorrentInfoHashManager> _logger =
         provider.GetRequiredService<ILogger<BitTorrentInfoHashManager>>();
@@ -25,7 +27,8 @@ public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<
         lock (_bitTorrentInfo)
         {
             if (_bitTorrentInfo.TryGetValue(btih, out var hash)) return hash;
-            hash = new BitTorrentInfoHashPrivateTracker(infoHash.ToArray());
+            hash = new BitTorrentInfoHashPrivateTracker(infoHash.ToArray(),
+                provider.GetRequiredService<ILogger<BitTorrentInfoHashPrivateTracker>>());
             _bitTorrentInfo[btih] = hash;
             return hash;
         }
@@ -52,14 +55,37 @@ public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<
         }
     }
 
+    public IEnumerator<IBitTorrentInfoHash> GetEnumerator()
+    {
+        return _bitTorrentInfo.Select(hash => hash.Value).GetEnumerator();
+    }
 
-    private class BitTorrentInfoHashPrivateTracker(byte[] btih) : IBitTorrentInfoHash
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return this.GetEnumerator();
+    }
+
+    public void Dispose()
+    {
+        foreach (var bitTorrentInfoHash in _bitTorrentInfo)
+        {
+            bitTorrentInfoHash.Value.Dispose();
+        }
+    }
+
+
+    private class BitTorrentInfoHashPrivateTracker(byte[] btih, ILogger<BitTorrentInfoHashPrivateTracker> logger)
+        : IBitTorrentInfoHash
     {
         private readonly ReadOnlyMemory<byte> _btih = btih;
 
         private readonly List<IPeer> _peers = [];
 
+        private readonly LinkedList<IBittorrentPeer> _bittorrentPeers = [];
+
         private bool _hasMetadataReceived = false;
+
+        private bool _hasHandshake = false;
 
         private long _pieceSize = 0;
 
@@ -104,9 +130,9 @@ public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<
         {
             get
             {
-                if (!_hasMetadataReceived)
+                if (!_hasHandshake)
                 {
-                    throw new InvalidOperationException("metadata has not been received");
+                    throw new InvalidOperationException("metadata has not been handshaked");
                 }
 
                 return _pieceCount;
@@ -117,9 +143,9 @@ public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<
         {
             get
             {
-                if (!_hasMetadataReceived)
+                if (!_hasHandshake)
                 {
-                    throw new InvalidOperationException("metadata has not been received");
+                    throw new InvalidOperationException("metadata has not been handshaked");
                 }
 
                 return _pieceSize;
@@ -128,16 +154,55 @@ public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<
 
         public bool HasMetadataReceived => _hasMetadataReceived;
 
-        public void BeginGetMetadata()
+        public async ValueTask<MetadataPiece> MetadataPieceHandshake()
+        {
+            if (_hasHandshake)
+                return await ValueTask.FromResult(new MetadataPiece
+                {
+                    PieceLength = _pieceSize,
+                    PieceCount = _pieceCount,
+                });
+            _hasHandshake = true;
+
+            return default;
+        }
+
+        public async ValueTask BeginGetMetadata()
         {
             if (_peers.Count == 0)
             {
                 return;
             }
 
+            var metadata = await this.MetadataPieceHandshake();
             // 这里开始获取相关属性
             //
             _hasMetadataReceived = true;
+        }
+
+        public void Dispose()
+        {
+            _semaphore.Dispose();
+            if (_bittorrentPeers.Count > 0)
+            {
+                var first = _bittorrentPeers.First;
+                while (first is not null)
+                {
+                    try
+                    {
+                        first.Value.Disconnect();
+                        first.Value.Dispose();
+                    }
+                    catch (Exception e)
+                    {
+                        logger.LogError(e, "Dispose Error, {ip}:{port}", first.Value.Address, first.Value.Port);
+                    }
+
+                    var current = first;
+                    first = first.Next;
+                    _bittorrentPeers.Remove(current);
+                }
+            }
         }
     }
 
@@ -153,19 +218,9 @@ public class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<
             return this.Address.Equals(other.Address) && this.Port == other.Port;
         }
     }
-
-    public IEnumerator<IBitTorrentInfoHash> GetEnumerator()
-    {
-        return _bitTorrentInfo.Select(hash => hash.Value).GetEnumerator();
-    }
-
-    IEnumerator IEnumerable.GetEnumerator()
-    {
-        return this.GetEnumerator();
-    }
 }
 
-public interface IBitTorrentInfoHash
+public interface IBitTorrentInfoHash : IDisposable
 {
     bool HasMetadataReceived { get; }
 
@@ -185,7 +240,9 @@ public interface IBitTorrentInfoHash
 
     public long PieceSize { get; }
 
-    void BeginGetMetadata();
+    ValueTask<MetadataPiece> MetadataPieceHandshake();
+
+    ValueTask BeginGetMetadata();
 }
 
 public interface IPeer : IEquatable<IPeer>
