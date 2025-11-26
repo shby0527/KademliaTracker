@@ -1,24 +1,23 @@
 using System.Runtime.InteropServices;
-using System.Text;
 
 namespace Umi.Dht.Client.Bittorrent;
 
-[StructLayout(LayoutKind.Sequential, Pack = 1)]
+[StructLayout(LayoutKind.Sequential, Pack = 1, CharSet = CharSet.Ansi)]
 public readonly ref struct BittorrentHandshake
 {
-    private const string Header = "BitTorrent protocol";
+    public const string HEADER = "BitTorrent protocol";
 
-    public ReadOnlySpan<byte> InfoHash { get; init; }
+    public const sbyte PROTOCOL_TYPE = 0x13;
 
+    [field: MarshalAs(UnmanagedType.U1)]
+    public sbyte Protocol { get; init; }
+
+    [field:MarshalAs(UnmanagedType.ByValTStr, SizeConst = 16 )]
+    public string Header { get; init; }
+
+    [field:MarshalAs(UnmanagedType.ByValArray, ArraySubType =  UnmanagedType.U1, SizeConst = 20)]
     public ReadOnlySpan<byte> PeerId { get; init; }
 
-    public ReadOnlySpan<byte> Encode()
-    {
-        var header = Encoding.UTF8.GetBytes(Header);
-        Span<byte> handshake = new byte[1 + header.Length + 8 + PeerId.Length + InfoHash.Length];
-        handshake[0] = 19;
-        InfoHash.CopyTo(handshake[(header.Length + 9)..]);
-        PeerId.CopyTo(handshake[(header.Length + 9 + InfoHash.Length)..]);
-        return handshake;
-    }
+    [field:MarshalAs(UnmanagedType.ByValArray, ArraySubType =  UnmanagedType.U1, SizeConst = 20)]
+    public ReadOnlySpan<byte> InfoHash { get; init; }
 }

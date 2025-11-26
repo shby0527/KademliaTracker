@@ -7,6 +7,7 @@ using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Umi.Dht.Client.Bittorrent;
 using Umi.Dht.Client.Configurations;
 using Umi.Dht.Client.TorrentIO;
 using Umi.Dht.Client.TorrentIO.StorageInfo;
@@ -587,7 +588,12 @@ public class KademliaNode
     public void QueueReceiveInfoHashMetadata()
     {
         _logger.LogDebug("begin receiving  info hash metadata, total {t}", _torrentInfoHashManager.Count);
-        ThreadPool.QueueUserWorkItem(_ => _torrentInfoHashManager.TryReceiveInfoHashMetadata());
+        var waitMetadata = new Thread(_torrentInfoHashManager.TryReceiveInfoHashMetadata)
+        {
+            IsBackground = true,
+            Name = "Metadata Receiver"
+        };
+        waitMetadata.Start();
     }
 
     private void OnNodeCheckPing(KBucket bucket, NodeInfo node)

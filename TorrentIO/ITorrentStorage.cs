@@ -7,4 +7,6 @@ public interface ITorrentStorage
     TorrentFileInfo Save(ReadOnlySpan<byte> data);
 
     IEnumerable<TorrentFileInfo> Search(string file);
+
+    TorrentFileInfo Exists(ReadOnlySpan<byte> infohash);
 }

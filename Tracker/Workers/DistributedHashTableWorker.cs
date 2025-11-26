@@ -9,6 +9,7 @@ using Umi.Dht.Client.Attributes;
 using Umi.Dht.Client.Configurations;
 using Umi.Dht.Client.Operator;
 using Umi.Dht.Client.Protocol;
+using Umi.Dht.Client.UPnP;
 
 namespace Umi.Dht.Client.Workers;
 
@@ -62,8 +63,15 @@ public class DistributedHashTableWorker(
         _command.Add("avg", this.RouterNode);
         _command.Add("get_metadata", this.GetMetadata);
         _command.Add("rebootstrap", this.ReBootstrap);
+        _command.Add("wanIP", this.GetWanIP);
     }
 
+    private string GetWanIP(IDictionary<string, string> dictionary)
+    {
+        var service = provider.GetRequiredService<IWanIPResolver>();
+        if (service.ExternalIPAddress is null) return "";
+        return service.ExternalIPAddress.Value;
+    }
 
     public override Task StopAsync(CancellationToken cancellationToken)
     {
@@ -88,6 +96,7 @@ public class DistributedHashTableWorker(
                listbtih       list BitTorrent Info Hash and peers counts
                avg            avg all count
                get_metadata   begin get all bt info hash metadata
+               wanIP          get UPnP Wan IP Address
                """;
     }
 

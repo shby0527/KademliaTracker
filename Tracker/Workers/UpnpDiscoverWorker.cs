@@ -20,7 +20,7 @@ public class UpnpDiscoverWorker(
     ILogger<UpnpDiscoverWorker> logger,
     IOptions<KademliaConfig> kademliaConfig,
     IConfiguration configuration,
-    IHttpClientFactory httpClientFactory) : BackgroundService
+    IHttpClientFactory httpClientFactory) : BackgroundService, IWanIPResolver
 {
     private const int MAX_PACK_SIZE = 0x10000;
 
@@ -37,6 +37,8 @@ public class UpnpDiscoverWorker(
     private const string WAN_CONNECTION_DEVICE = "WANConnectionDevice:1";
 
     private const string WAN_IP_CONNECTION = "WANIPConnection:1";
+
+    public Lazy<string>? ExternalIPAddress { get; private set; }
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -224,12 +226,56 @@ public class UpnpDiscoverWorker(
 
             logger.LogTrace("control url is {url}", uriBuilder.Uri);
 
+            ExternalIPAddress = new Lazy<string>(() =>
+                GetExternalIPAddress(uriBuilder.Uri, wanIpConnection["serviceType"]!.InnerText, local)
+                    .ConfigureAwait(false).GetAwaiter().GetResult());
 
             await AddPortMapping(uriBuilder.Uri, wanIpConnection["serviceType"]!.InnerText, local);
         }
         catch (Exception e)
         {
             logger.LogError(e, "parsing node error");
+        }
+    }
+
+
+    private async Task<string> GetExternalIPAddress(Uri uri, string domain, IPAddress local)
+    {
+        logger.LogTrace("begin get wan ip address");
+        try
+        {
+            XmlDocument document = new();
+            var bodyNode = WarpSoapPackage(document);
+            var getExternalIpAddress = document.CreateElement("m", "GetExternalIPAddress", domain);
+            bodyNode.AppendChild(getExternalIpAddress);
+            var xml = await ConvertXmlString(document);
+            logger.LogTrace("send to body {xml}", xml);
+            var client = httpClientFactory.CreateClient();
+            using var postRequest = new HttpRequestMessage(HttpMethod.Post, uri);
+            using var requestContent = new StringContent(xml, Encoding.UTF8, "text/xml");
+            requestContent.Headers.Add("SOAPAction", $"{domain}#GetExternalIPAddress");
+            postRequest.Content = requestContent;
+            postRequest.Headers.Add("Connection", "close");
+            postRequest.Headers.Add("Cache-Control", "no-cache");
+            postRequest.Headers.Add("Pragma", "no-cache");
+            using var response = await client.SendAsync(postRequest);
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning("error mapping port, status {s}", response.StatusCode);
+                return string.Empty;
+            }
+
+            var result = await response.Content.ReadAsStringAsync();
+            logger.LogTrace("add port mapping result: {r}", result);
+            XmlDocument resultDoc = new();
+            resultDoc.LoadXml(result);
+
+            return resultDoc?.DocumentElement?.FirstChild?.FirstChild?.FirstChild?.InnerText ?? "";
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, "error Getting wan ip address");
+            return string.Empty;
         }
     }
 
