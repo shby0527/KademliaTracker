@@ -56,7 +56,7 @@ internal class BitTorrentInfoHashPrivateTracker(
             if (!_bittorrentPeers.Any(p => p.Equals(peer)))
             {
                 _bittorrentPeers.AddLast(new SamplePeer(provider, peer,
-                    provider.GetRequiredService<ILogger<SamplePeer>>()));
+                    provider.GetRequiredService<ILogger<SamplePeer>>(), _btih.ToArray()));
             }
         }
     }
@@ -94,6 +94,15 @@ internal class BitTorrentInfoHashPrivateTracker(
         if (_bittorrentPeers.Count == 0)
         {
             return;
+        }
+
+        var t = from p in _bittorrentPeers
+            where !p.IsConnected
+            select p;
+        
+        foreach (var bittorrentPeer in t.Take(1))
+        {
+            await bittorrentPeer.Connect();
         }
 
         // 这里开始获取相关属性
