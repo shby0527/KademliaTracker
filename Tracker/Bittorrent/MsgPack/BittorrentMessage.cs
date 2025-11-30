@@ -13,6 +13,8 @@ public readonly ref struct BittorrentMessage
     public const byte PIECE = 0x07;
     public const byte CANCEL = 0x08;
 
+    public const long PIECE_SIZE = 16384;
+
     public uint MsgLength { get; init; }
 
     public byte MsgType { get; init; }

@@ -12,13 +12,17 @@ public interface IBittorrentPeer : IPeer, IEquatable<IBittorrentPeer>, IEquatabl
 
     Task Disconnect();
 
-    Task ExtensionHandshake();
+    MetadataPiece Metadata { get; }
 
-    Task<MetadataPiece> MetadataHandshake();
+    Task PeersExchange(IEnumerable<IPeer> adds, IEnumerable<IPeer> remove);
 
-    Task<IEnumerable<IPeer>> PeersExchange();
+    Task GetHashMetadata(long piece);
 
-    ValueTask<ReadOnlyMemory<byte>> GetHashMetadata(long piece);
+    event MetadataHandshakeEventHandler MetadataHandshake;
+
+    event PeerExchangeEventHandler PeerExchange;
+
+    event PeerCloseEventHandler PeerClose;
 }
 
 public interface IPeer

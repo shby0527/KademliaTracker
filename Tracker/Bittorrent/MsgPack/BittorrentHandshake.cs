@@ -5,6 +5,8 @@ namespace Umi.Dht.Client.Bittorrent.MsgPack;
 
 public readonly ref struct BittorrentHandshake
 {
+    public const int PACKAGE_SIZE = 68;
+    
     public const string HEADER = "BitTorrent protocol";
 
     public const byte PROTOCOL_TYPE = 0x13;
@@ -26,7 +28,7 @@ public readonly ref struct BittorrentHandshake
     /// <returns></returns>
     public ReadOnlySpan<byte> Encode()
     {
-        Span<byte> b = new byte[68];
+        Span<byte> b = new byte[PACKAGE_SIZE];
         b[0] = PROTOCOL_TYPE;
         Encoding.ASCII.GetBytes(HEADER, b[1..20]);
         Reserve.CopyTo(b[20..28]);

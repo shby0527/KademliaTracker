@@ -99,8 +99,8 @@ internal class BitTorrentInfoHashPrivateTracker(
         var t = from p in _bittorrentPeers
             where !p.IsConnected
             select p;
-        
-        foreach (var bittorrentPeer in t.Take(1))
+
+        foreach (var bittorrentPeer in t.Take(5))
         {
             await bittorrentPeer.Connect();
         }

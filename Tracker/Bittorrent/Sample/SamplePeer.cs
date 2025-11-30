@@ -1,4 +1,6 @@
 using System.Buffers;
+using System.Buffers.Binary;
+using System.Diagnostics;
 using System.IO.Pipelines;
 using System.Net;
 using System.Net.Sockets;
@@ -9,13 +11,19 @@ using Microsoft.Extensions.Logging;
 using Umi.Dht.Client.Bittorrent.MsgPack;
 using Umi.Dht.Client.Protocol;
 using Umi.Dht.Client.TorrentIO.StorageInfo;
+using Umi.Dht.Client.TorrentIO.Utils;
 using Umi.Dht.Client.UPnP;
+using ThreadState = System.Threading.ThreadState;
 
 namespace Umi.Dht.Client.Bittorrent.Sample;
 
 public sealed class SamplePeer : IBittorrentPeer
 {
-    private static RandomNumberGenerator _generator = RandomNumberGenerator.Create();
+    private const byte UT_METADATA_ID = 0x2;
+
+    private const byte UT_PEX_ID = 0x3;
+
+    private static readonly RandomNumberGenerator _generator = RandomNumberGenerator.Create();
 
     private readonly ILogger<SamplePeer> _logger;
 
@@ -31,13 +39,16 @@ public sealed class SamplePeer : IBittorrentPeer
 
     private readonly Socket _client;
 
+    private Timer? _keepAliveTimer;
+
     private readonly SocketAsyncEventArgs _receiveEventArgs;
 
     private readonly Pipe _pipe;
 
     private readonly Thread _processThread;
 
-    private readonly Semaphore _semaphore;
+    private readonly Semaphore _semaphore = new(1, 1);
+
 
     private volatile bool _finished;
 
@@ -45,9 +56,14 @@ public sealed class SamplePeer : IBittorrentPeer
     private volatile bool _hasExtensionHandshake = false;
     private volatile bool _hasMetadataHandshake = false;
     private volatile bool _peerHasPex = false;
+    private volatile bool _connecting = false;
+
+    // 握手后赋值
+    private long _ut_metadata_id = 0x0;
+    private long _ut_pex_id = 0x0;
 
     // 对端 peer id
-    private Memory<byte> _connectedPeerId;
+    private readonly Memory<byte> _connectedPeerId;
 
     private long _pieceLength = 0;
     private long _pieceCount = 0;
@@ -59,7 +75,6 @@ public sealed class SamplePeer : IBittorrentPeer
         _logger = logger;
         _infoHash = infoHash;
         _pipe = new Pipe();
-        _semaphore = new Semaphore(1, 1);
         _wanIpResolver = provider.GetRequiredService<IWanIPResolver>();
         Node = peer.Node;
         Address = peer.Address;
@@ -80,7 +95,6 @@ public sealed class SamplePeer : IBittorrentPeer
             Name = $"{Convert.ToHexStringLower(_peerId.Span)}-Process",
             IsBackground = true
         };
-        _processThread.Start();
     }
 
     public NodeInfo Node { get; }
@@ -97,8 +111,27 @@ public sealed class SamplePeer : IBittorrentPeer
 
     public async Task Connect()
     {
+        if (IsConnected) return;
         _logger.LogTrace("begin connecting {address}:{port}", Address, Port);
-        await _client.ConnectAsync(Address, Port);
+        try
+        {
+            if (!_connecting)
+            {
+                _connecting = true;
+                await _client.ConnectAsync(Address, Port);
+                _connecting = false;
+            }
+            else
+            {
+                return;
+            }
+        }
+        catch (Exception e)
+        {
+            _logger.LogWarning(e, "connect failure");
+            return;
+        }
+
         IsConnected = true;
         _finished = false;
         if (!_client.ReceiveAsync(_receiveEventArgs))
@@ -120,26 +153,48 @@ public sealed class SamplePeer : IBittorrentPeer
         // 发送 handshake
         var send = await _client.SendAsync(encode.ToArray());
         _logger.LogDebug("send handshake to {address}:{port}, size is {size}", Address, Port, send);
+        _processThread.Start();
+        _keepAliveTimer = new Timer(
+            _ => this.KeepAlive().ConfigureAwait(false).GetAwaiter()
+                .OnCompleted(() => _logger.LogTrace("timer keepalive finished")),
+            null, TimeSpan.FromMinutes(2),
+            TimeSpan.FromMinutes(2));
     }
 
     public async Task Disconnect()
     {
         if (_client.Connected)
         {
+            _logger.LogTrace("disconnecting peer");
             await _client.DisconnectAsync(false);
             IsConnected = false;
             _finished = true;
+            this.PeerClose?.Invoke(this, new PeerCloseEventArg(0, false));
         }
     }
+
+    public MetadataPiece Metadata => _hasMetadataHandshake
+        ? new MetadataPiece
+        {
+            PieceCount = _pieceCount,
+            PieceLength = _pieceLength
+        }
+        : throw new InvalidOperationException("Handshake is not complete");
 
     private void OnSocketCompleted(object? sender, SocketAsyncEventArgs args)
     {
         if (args is not { SocketError: SocketError.Success, BytesTransferred: > 0 })
         {
             _logger.LogError("receive error {error}, close", args.SocketError);
-            _client.Close();
+            if (_client.Connected)
+            {
+                _client.Close();
+                this.PeerClose?.Invoke(this, new PeerCloseEventArg(1, false));
+            }
+
             _finished = true;
             IsConnected = false;
+            _pipe.Writer.Complete();
             return;
         }
 
@@ -160,30 +215,12 @@ public sealed class SamplePeer : IBittorrentPeer
         var reader = _pipe.Reader;
         while (!_finished)
         {
+            _semaphore.WaitOne();
             try
             {
                 if (!_hasPeerHandshake)
                 {
                     this.OnPeerHandshake(reader)
-                        .ConfigureAwait(false)
-                        .GetAwaiter()
-                        .GetResult();
-                    continue;
-                }
-
-                if (_hasPeerHandshake && !_hasExtensionHandshake)
-                {
-                    // extensionHandshake
-                    this.OnExtensionHandshake(reader)
-                        .ConfigureAwait(false)
-                        .GetAwaiter()
-                        .GetResult();
-                    continue;
-                }
-
-                if (_hasExtensionHandshake && !_hasMetadataHandshake)
-                {
-                    this.OnMetadataHandshake(reader)
                         .ConfigureAwait(false)
                         .GetAwaiter()
                         .GetResult();
@@ -197,7 +234,11 @@ public sealed class SamplePeer : IBittorrentPeer
             }
             catch (Exception e)
             {
-                _logger.LogError(e, "error");
+                _logger.LogError(e, "package process error");
+            }
+            finally
+            {
+                _semaphore.Release();
             }
         }
 
@@ -207,93 +248,234 @@ public sealed class SamplePeer : IBittorrentPeer
 
     private async Task OnPeerHandshake(PipeReader reader)
     {
-        try
+        var result = await reader.ReadAsync().AsTask().ConfigureAwait(false);
+
+        var buffer = result.Buffer;
+        if (buffer.IsEmpty)
         {
-            var result = await reader.ReadAsync();
-            var buffer = result.Buffer;
-            var firstByte = buffer.First.Span[0];
-            if (firstByte != BittorrentHandshake.PROTOCOL_TYPE)
-            {
-                throw new FormatException("handshake format error");
-            }
-
-            _semaphore.WaitOne();
-            // 读取 68 bytes
-            Span<byte> span = stackalloc byte[68];
-            result.Buffer.CopyTo(span);
-            var header = span[1..20];
-            if (!BittorrentHandshake.HEADER.Equals(Encoding.ASCII.GetString(header)))
-            {
-                throw new FormatException("handshake format error");
-            }
-
-            var reserve = span[20..28];
-            var extensionMark = reserve[5];
-            span[48..].CopyTo(_connectedPeerId.Span);
-            if (!span[28..48].SequenceEqual(_infoHash))
-            {
-                _logger.LogError("peer is not {btih}'s peer, peer is {pbtih}",
-                    Convert.ToHexString(_infoHash),
-                    Convert.ToHexString(span[48..]));
-                _finished = true;
-                await _client.DisconnectAsync(false);
-                IsConnected = false;
-            }
-
-            if ((extensionMark & 0x10) != 0x10)
-            {
-                _logger.LogError("peer can not has extension mark, disconnecting");
-                _finished = true;
-                await _client.DisconnectAsync(false);
-                IsConnected = false;
-            }
-
-            _hasPeerHandshake = true;
-        }
-        finally
-        {
-            _semaphore.Release();
+            _logger.LogTrace("no data read in handshake");
+            return;
         }
 
-        await this.ExtensionHandshake();
+        var firstByte = buffer.First.Span[0];
+        if (firstByte != BittorrentHandshake.PROTOCOL_TYPE)
+        {
+            _finished = true;
+            await _client.DisconnectAsync(false);
+            IsConnected = false;
+            reader.AdvanceTo(result.Buffer.Start, result.Buffer.End);
+            await reader.CompleteAsync();
+            this.PeerClose?.Invoke(this, new PeerCloseEventArg(2, true));
+            throw new FormatException("handshake format error");
+        }
+
+        // 字节小了
+        if (buffer.Length < 68)
+        {
+            _finished = true;
+            await _client.DisconnectAsync(false);
+            IsConnected = false;
+            reader.AdvanceTo(result.Buffer.Start, result.Buffer.End);
+            await reader.CompleteAsync();
+            this.PeerClose?.Invoke(this, new PeerCloseEventArg(3, true));
+            throw new FormatException("handshake format error");
+        }
+
+        // 读取 68 bytes
+        Span<byte> span = stackalloc byte[BittorrentHandshake.PACKAGE_SIZE];
+        result.Buffer.Slice(result.Buffer.Start, BittorrentHandshake.PACKAGE_SIZE).CopyTo(span);
+        var header = span[1..20];
+        if (!BittorrentHandshake.HEADER.Equals(Encoding.ASCII.GetString(header)))
+        {
+            _finished = true;
+            await _client.DisconnectAsync(false);
+            IsConnected = false;
+            reader.AdvanceTo(result.Buffer.Start, result.Buffer.End);
+            await reader.CompleteAsync();
+            this.PeerClose?.Invoke(this, new PeerCloseEventArg(4, true));
+            throw new FormatException("handshake format error");
+        }
+
+        var reserve = span[20..28];
+        var extensionMark = reserve[5];
+        span[48..].CopyTo(_connectedPeerId.Span);
+        if (!span[28..48].SequenceEqual(_infoHash))
+        {
+            _logger.LogError("peer is not {btih}'s peer, peer is {pbtih}",
+                Convert.ToHexString(_infoHash),
+                Convert.ToHexString(span[48..]));
+            _finished = true;
+            await _client.DisconnectAsync(false);
+            IsConnected = false;
+            reader.AdvanceTo(result.Buffer.Start, result.Buffer.End);
+            await reader.CompleteAsync();
+            this.PeerClose?.Invoke(this, new PeerCloseEventArg(5, true));
+            return;
+        }
+
+        if ((extensionMark & 0x10) != 0x10)
+        {
+            _logger.LogError("peer can not has extension mark, disconnecting");
+            _finished = true;
+            await _client.DisconnectAsync(false);
+            IsConnected = false;
+            reader.AdvanceTo(result.Buffer.Start, result.Buffer.End);
+            await reader.CompleteAsync();
+            this.PeerClose?.Invoke(this, new PeerCloseEventArg(7, false));
+            return;
+        }
+
+        _hasPeerHandshake = true;
+        reader.AdvanceTo(result.Buffer.Start, result.Buffer.GetPosition(BittorrentHandshake.PACKAGE_SIZE));
+
+        await this.DoExtensionHandshake();
     }
 
-    private async Task OnExtensionHandshake(PipeReader reader)
+    private async Task OnExtensionHandshake(ReadOnlyMemory<byte> buffer)
     {
-    }
+        _logger.LogDebug("begin process Extension Handshake");
+        var enumerator = buffer.Span[2..].GetEnumerator();
+        if (!enumerator.MoveNext()) return;
+        var map = BEncoder.BDecodeToMap(ref enumerator);
+        if (!map.TryGetValue("m", out var m) || m is not IDictionary<string, object> mSubMap)
+        {
+            _logger.LogWarning("handshake format error");
+            await this.Disconnect();
+            return;
+        }
 
-    private async Task OnMetadataHandshake(PipeReader reader)
-    {
+        if (mSubMap.TryGetValue("ut_metadata", out var metadata) && metadata is long utMetadata && utMetadata != 0)
+        {
+            _ut_metadata_id = utMetadata;
+            if (map.TryGetValue("metadata_size", out var metadataSize) && metadataSize is long size)
+            {
+                _hasMetadataHandshake = true;
+                _pieceLength = size;
+                _pieceCount = size / BittorrentMessage.PIECE_SIZE;
+                _logger.LogDebug("metadata handshake processed, piece length {l}, total count {c}",
+                    _pieceLength, _pieceCount);
+                MetadataHandshake?.Invoke(this, new MetadataHandshakeEventArg(new MetadataPiece()
+                {
+                    PieceCount = _pieceCount,
+                    PieceLength = _pieceLength,
+                }));
+            }
+        }
+        else
+        {
+            _logger.LogWarning("peer can not do metadata msg");
+            await this.Disconnect();
+            return;
+        }
+
+        if (mSubMap.TryGetValue("ut_pex", out var pex) && pex is long utPex && utPex != 0)
+        {
+            _ut_pex_id = utPex;
+            _peerHasPex = true;
+        }
+
+        _hasExtensionHandshake = true;
+        _logger.LogTrace("end process Extension Handshake, other package {package}", map);
     }
 
     private async Task OnOtherMessage(PipeReader reader)
     {
+        var header = await reader.ReadAsync().AsTask().ConfigureAwait(false);
+        var lengthByte = header.Buffer.FirstSpan[..4];
+        var length = BinaryPrimitives.ReadUInt32BigEndian(lengthByte);
+        reader.AdvanceTo(header.Buffer.Start, header.Buffer.GetPosition(4));
+        if (length == 0)
+        {
+            _logger.LogTrace("received keepalive message, ignored it");
+            return;
+        }
+
+        // read type and length
+        var message = MemoryPool<byte>.Shared.Rent((int)length);
+        try
+        {
+            var buffer = await reader.ReadAsync().AsTask().ConfigureAwait(false);
+            var processedByte = 0;
+            while (buffer is { IsCanceled: false, IsCompleted: false } && buffer.Buffer.Length + processedByte < length)
+            {
+                buffer.Buffer.CopyTo(message.Memory.Span[processedByte..]);
+                processedByte += (int)buffer.Buffer.Length;
+                reader.AdvanceTo(buffer.Buffer.Start, buffer.Buffer.End);
+                buffer = await reader.ReadAsync().AsTask().ConfigureAwait(false);
+            }
+
+            buffer.Buffer.Slice(buffer.Buffer.Start, length - processedByte)
+                .CopyTo(message.Memory.Span[processedByte..(int)length]);
+            reader.AdvanceTo(buffer.Buffer.Start, buffer.Buffer.GetPosition(length - processedByte));
+            switch (message.Memory.Span[0])
+            {
+                case BittorrentMessage.EXTENDED:
+                    var extendedType = message.Memory.Span[1];
+                    if (extendedType == 0x0)
+                    {
+                        await this.OnExtensionHandshake(message.Memory);
+                    }
+
+                    break;
+                default:
+                    _logger.LogWarning("unknown message type {type} ignored", message.Memory.Span[0]);
+                    break;
+            }
+        }
+        finally
+        {
+            message.Dispose();
+        }
     }
 
-
-    public async Task ExtensionHandshake()
+    private async Task KeepAlive()
     {
-        var bd = new Dictionary<string, object>();
-        
+        Span<byte> data = stackalloc byte[4];
+        var success = BinaryPrimitives.TryWriteUInt32BigEndian(data, 0x0);
+        Debug.Assert(success, "Convert failure");
+        await _client.SendAsync(data.ToArray());
     }
 
-    public async Task<MetadataPiece> MetadataHandshake()
+    private async Task DoExtensionHandshake()
     {
-        return default;
+        var mSub = new Dictionary<string, object>
+        {
+            { "ut_metadata", (long)UT_METADATA_ID },
+            { "ut_pex", (long)UT_PEX_ID }
+        };
+        var bd = new Dictionary<string, object>
+        {
+            { "m", mSub },
+            { "v", "qb" }
+        };
+        var encode = BEncoder.BEncode(bd);
+        using var memory = MemoryPool<byte>.Shared.Rent(6 + encode.Length + 5);
+        BinaryPrimitives.WriteUInt32BigEndian(memory.Memory.Span[..4], 2 + (uint)encode.Length);
+        memory.Memory.Span[4] = BittorrentMessage.EXTENDED;
+        memory.Memory.Span[5] = 0x0;
+        encode.CopyTo(memory.Memory.Span[6..]);
+        var instent = memory.Memory.Span[(6 + encode.Length)..];
+        BinaryPrimitives.WriteUInt32BigEndian(instent, 1);
+        instent[4] = BittorrentMessage.INTERESTED;
+        var sended = await _client.SendAsync(memory.Memory[..(6 + encode.Length + 5)]);
+        _logger.LogTrace("send bytes {s}", sended);
     }
 
-    public async Task<IEnumerable<IPeer>> PeersExchange()
+    public async Task PeersExchange(IEnumerable<IPeer> adds, IEnumerable<IPeer> remove)
     {
-        if (!_peerHasPex) return [];
+        if (!_peerHasPex) return;
 
-        return [];
+        return;
     }
 
-    public async ValueTask<ReadOnlyMemory<byte>> GetHashMetadata(long piece)
+    public async Task GetHashMetadata(long piece)
     {
         throw new NotImplementedException();
     }
 
+    public event MetadataHandshakeEventHandler? MetadataHandshake;
+    public event PeerExchangeEventHandler? PeerExchange;
+    public event PeerCloseEventHandler? PeerClose;
 
     public bool Equals(IBittorrentPeer? other)
     {
@@ -312,8 +494,10 @@ public sealed class SamplePeer : IBittorrentPeer
         }
 
         _semaphore.Dispose();
+        _keepAliveTimer?.Dispose();
         _client.Dispose();
-        _processThread.Interrupt();
+        if (_processThread.ThreadState != ThreadState.Unstarted)
+            _processThread.Interrupt();
     }
 
     public bool Equals(IPeer? other)

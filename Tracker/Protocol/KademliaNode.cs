@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Net;
@@ -207,7 +208,7 @@ public class KademliaNode
                 // node id is
                 var itemId = item[..20];
                 var itemIP = new IPAddress(item[20..24]);
-                var port = (int)new BigInteger(item[24..26], true, true);
+                var port = BinaryPrimitives.ReadInt32BigEndian(item[24..26]);
                 _logger.LogTrace("received node ID:{id}, IP: {ip}, port: {port} ",
                     BitConverter.ToString(itemId.ToArray()).Replace("-", ""), itemIP, port);
                 if (itemId.SequenceEqual(CLIENT_NODE_ID.Span))
@@ -256,7 +257,7 @@ public class KademliaNode
                 if (item is not byte[] pip) continue;
                 ReadOnlySpan<byte> peerData = pip;
                 var address = new IPAddress(peerData[..4]);
-                var port = (int)new BigInteger(peerData[4..6], true, true);
+                var port = BinaryPrimitives.ReadInt32BigEndian(peerData[4..6]);
                 p.Add(BitTorrentInfoHashManager.CreatePeer(address, port, node!));
             }
 
@@ -349,15 +350,15 @@ public class KademliaNode
 
         ReadOnlySpan<byte> hash = (byte[])arguments["info_hash"];
         var infoHash = _torrentInfoHashManager.AddBitTorrentInfoHash(hash);
-        if (arguments.TryGetValue("implied_port", out var iPort) && iPort is int p && p != 0)
+        if (arguments.TryGetValue("implied_port", out var iPort) && iPort is long p && p != 0)
         {
             var peer = BitTorrentInfoHashManager.CreatePeer(ip.Address, ip.Port, node!);
             infoHash.AddPeers([peer]);
         }
         else
         {
-            var eport = (int)arguments["port"];
-            var peer = BitTorrentInfoHashManager.CreatePeer(ip.Address, eport, node!);
+            var eport = (long)arguments["port"];
+            var peer = BitTorrentInfoHashManager.CreatePeer(ip.Address, (int)eport, node!);
             infoHash.AddPeers([peer]);
         }
 
@@ -466,7 +467,7 @@ public class KademliaNode
             // node id is
             var itemId = item[..20];
             var itemIP = new IPAddress(item[20..24]);
-            var port = (int)new BigInteger(item[24..26], true, true);
+            var port = BinaryPrimitives.ReadInt32BigEndian(item[24..26]);
             _logger.LogTrace("received node ID:{id}, IP: {ip}, port: {port} ",
                 BitConverter.ToString(itemId.ToArray()).Replace("-", ""), itemIP, port);
             if (itemId.SequenceEqual(CLIENT_NODE_ID.Span))
