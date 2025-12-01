@@ -208,7 +208,7 @@ public class KademliaNode
                 // node id is
                 var itemId = item[..20];
                 var itemIP = new IPAddress(item[20..24]);
-                var port = BinaryPrimitives.ReadInt32BigEndian(item[24..26]);
+                var port = BinaryPrimitives.ReadUInt16BigEndian(item[24..26]);
                 _logger.LogTrace("received node ID:{id}, IP: {ip}, port: {port} ",
                     BitConverter.ToString(itemId.ToArray()).Replace("-", ""), itemIP, port);
                 if (itemId.SequenceEqual(CLIENT_NODE_ID.Span))
@@ -257,7 +257,7 @@ public class KademliaNode
                 if (item is not byte[] pip) continue;
                 ReadOnlySpan<byte> peerData = pip;
                 var address = new IPAddress(peerData[..4]);
-                var port = BinaryPrimitives.ReadInt32BigEndian(peerData[4..6]);
+                var port = BinaryPrimitives.ReadUInt16BigEndian(peerData[4..6]);
                 p.Add(BitTorrentInfoHashManager.CreatePeer(address, port, node!));
             }
 
@@ -458,7 +458,9 @@ public class KademliaNode
             });
         }
 
-        ReadOnlySpan<byte> nodes = (byte[])dictionary["nodes"];
+        if (!dictionary.TryGetValue("nodes", out var value)) return;
+
+        ReadOnlySpan<byte> nodes = (byte[])value;
         var nodeCount = nodes.Length / 26;
         _logger.LogTrace("found {count} nodes", nodeCount);
         for (var i = 0; i < nodes.Length; i += 26)
@@ -467,7 +469,7 @@ public class KademliaNode
             // node id is
             var itemId = item[..20];
             var itemIP = new IPAddress(item[20..24]);
-            var port = BinaryPrimitives.ReadInt32BigEndian(item[24..26]);
+            var port = BinaryPrimitives.ReadUInt16BigEndian(item[24..26]);
             _logger.LogTrace("received node ID:{id}, IP: {ip}, port: {port} ",
                 BitConverter.ToString(itemId.ToArray()).Replace("-", ""), itemIP, port);
             if (itemId.SequenceEqual(CLIENT_NODE_ID.Span))

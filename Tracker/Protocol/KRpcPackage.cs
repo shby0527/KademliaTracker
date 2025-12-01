@@ -36,7 +36,7 @@ public struct KRpcPackage()
     /// <summary>
     /// e, list
     /// </summary>
-    public (int Code, string Message)? Error { get; set; } = null;
+    public (long Code, string Message)? Error { get; set; } = null;
 
     public ReadOnlySpan<byte> Encode()
     {
@@ -145,7 +145,7 @@ public struct KRpcPackage()
                 }
 
                 var array = e.ToArray();
-                package.Error = ((int)array[0], Encoding.ASCII.GetString((byte[])array[1]) ?? "");
+                package.Error = ((long)array[0], Encoding.ASCII.GetString((byte[])array[1]) ?? "");
 
                 break;
             default:

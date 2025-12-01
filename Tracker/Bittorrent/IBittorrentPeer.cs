@@ -23,6 +23,8 @@ public interface IBittorrentPeer : IPeer, IEquatable<IBittorrentPeer>, IEquatabl
     event PeerExchangeEventHandler PeerExchange;
 
     event PeerCloseEventHandler PeerClose;
+
+    event MetadataPieceEventHandler MetadataPiece;
 }
 
 public interface IPeer

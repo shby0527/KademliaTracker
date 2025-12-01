@@ -132,6 +132,11 @@ public static class BEncoder
         return Encoding.ASCII.GetBytes($"i{number}e");
     }
 
+    public static ReadOnlySpan<byte> BEncode(ulong number)
+    {
+        return Encoding.ASCII.GetBytes($"i{number}e");
+    }
+
     public static ReadOnlySpan<byte> BEncode(ReadOnlySpan<byte> str)
     {
         List<byte> s = [];
@@ -171,6 +176,12 @@ public static class BEncoder
         {
             long value => BEncode(value),
             int value => BEncode(value),
+            byte value => BEncode(value),
+            sbyte value => BEncode(value),
+            short value => BEncode(value),
+            ushort value => BEncode(value),
+            uint value => BEncode(value),
+            ulong value => BEncode(value),
             string str => BEncode(Encoding.ASCII.GetBytes(str)),
             ReadOnlyMemory<byte> b => BEncode(b.Span),
             byte[] s => BEncode(s),

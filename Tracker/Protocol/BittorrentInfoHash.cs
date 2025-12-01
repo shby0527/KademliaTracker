@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Numerics;
+using System.Security.Cryptography;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Umi.Dht.Client.Bittorrent;
@@ -20,6 +21,10 @@ internal class BitTorrentInfoHashPrivateTracker(
     private readonly LinkedList<IBittorrentPeer> _bittorrentPeers = [];
 
     private bool _hasMetadataReceived = false;
+
+    private readonly LinkedList<ReadOnlyMemory<byte>> _metadataBuffers = [];
+
+    private readonly BigInteger _pieceBitMap = BigInteger.Zero;
 
     private long _pieceSize = 0;
 
@@ -55,9 +60,96 @@ internal class BitTorrentInfoHashPrivateTracker(
         {
             if (!_bittorrentPeers.Any(p => p.Equals(peer)))
             {
-                _bittorrentPeers.AddLast(new SamplePeer(provider, peer,
-                    provider.GetRequiredService<ILogger<SamplePeer>>(), _btih.ToArray()));
+                var samplePeer = new SamplePeer(provider, peer,
+                    provider.GetRequiredService<ILogger<SamplePeer>>(), _btih.ToArray());
+                samplePeer.PeerClose += OnSamplePeerOnPeerClose;
+                samplePeer.MetadataHandshake += OnSamplePeerOnMetadataHandshake;
+                samplePeer.PeerExchange += OnSamplePeerOnPeerExchange;
+                samplePeer.MetadataPiece += SamplePeerOnMetadataPiece;
+                _bittorrentPeers.AddLast(samplePeer);
             }
+        }
+    }
+
+    private void SamplePeerOnMetadataPiece(IBittorrentPeer sender, MetadataPieceEventArg e)
+    {
+        try
+        {
+            _semaphore.WaitOne();
+            logger.LogInformation("metadata received");
+            if (e.MsgType == 1)
+            {
+                var buffer = e.Buffer;
+                _metadataBuffers.AddLast(buffer[..(int)e.Length]);
+                if (_metadataBuffers.Sum(e => e.Length) > e.Length)
+                {
+                    _pieceSize = e.Length;
+                    // 完整的
+                    this.DoMetadataParser();
+                    return;
+                }
+
+                sender.GetHashMetadata(e.Piece + 1)
+                    .GetAwaiter().OnCompleted(() => logger.LogTrace("{picec} received", e.Piece + 1));
+            }
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
+    private void DoMetadataParser()
+    {
+        
+        _hasMetadataReceived = true;
+    }
+
+    private void OnSamplePeerOnPeerExchange(IBittorrentPeer sender, PeerExchangeEventArg e)
+    {
+        try
+        {
+            _semaphore.WaitOne();
+            logger.LogInformation("peer exchange received");
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
+    private void OnSamplePeerOnMetadataHandshake(IBittorrentPeer peer, MetadataHandshakeEventArg e)
+    {
+        try
+        {
+            _semaphore.WaitOne();
+            logger.LogInformation("metadata piece received, length: {l}, count: {c}",
+                e.Metadata.PieceLength, e.Metadata.PieceCount);
+            this._pieceCount = e.Metadata.PieceCount;
+            this._pieceSize = e.Metadata.PieceLength;
+            // 这里先请求第一片
+            peer.GetHashMetadata(0)
+                .GetAwaiter()
+                .OnCompleted(() => logger.LogDebug("this first piece finished request"));
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
+    private void OnSamplePeerOnPeerClose(IPeer sender, PeerCloseEventArg e)
+    {
+        try
+        {
+            _semaphore.WaitOne();
+            logger.LogDebug("peer: {address}:{port} closed", sender.Address, sender.Port);
+            var node = _bittorrentPeers.Find((IBittorrentPeer)sender);
+            if (node is not null) _bittorrentPeers.Remove(node);
+        }
+        finally
+        {
+            _semaphore.Release();
         }
     }
 
@@ -96,18 +188,21 @@ internal class BitTorrentInfoHashPrivateTracker(
             return;
         }
 
-        var t = from p in _bittorrentPeers
-            where !p.IsConnected
-            select p;
-
-        foreach (var bittorrentPeer in t.Take(5))
+        var btih = Convert.ToHexString(_btih.Span);
+        var node = _bittorrentPeers.First;
+        while (node is not null)
         {
-            await bittorrentPeer.Connect();
+            await node.Value.Connect();
+            if (node.Value.IsConnected) break;
+            var current = node;
+            node = node.Next;
+            current.Value.Dispose();
+            _bittorrentPeers.Remove(current);
+            logger.LogWarning("{btih} peer: {addr}:{port} connected failure, trying next",
+                btih, current.Value.Address, current.Value.Port);
         }
 
-        // 这里开始获取相关属性
-        //
-        _hasMetadataReceived = true;
+        logger.LogWarning("{btih} has no more peers", btih);
     }
 
     public void Dispose()

@@ -119,7 +119,7 @@ public static class KademliaProtocols
         };
         if (peers.Count != 0)
         {
-            dictionary.Add("values", peers);
+            dictionary.Add("values", peers.Cast<object>().ToArray());
         }
 
         return new KRpcPackage

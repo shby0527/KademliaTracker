@@ -19,11 +19,15 @@ public class PeerExchangeEventArg(IEnumerable<IPeer> add, IEnumerable<IPeer> rem
 /// </summary>
 /// <param name="buffer">分片数据</param>
 /// <param name="piece">分片号</param>
-public class MetadataPieceEventArg(ReadOnlyMemory<byte> buffer, long piece) : EventArgs
+public class MetadataPieceEventArg(ReadOnlyMemory<byte> buffer, long piece, long msgType, long length) : EventArgs
 {
     public ReadOnlyMemory<byte> Buffer { get; } = buffer;
 
     public long Piece { get; } = piece;
+
+    public long MsgType { get; } = msgType;
+
+    public long Length { get; } = length;
 }
 
 public class PeerCloseEventArg(int reason, bool remove) : EventArgs

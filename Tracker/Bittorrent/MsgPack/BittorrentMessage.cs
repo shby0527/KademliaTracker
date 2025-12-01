@@ -18,4 +18,9 @@ public readonly ref struct BittorrentMessage
     public uint MsgLength { get; init; }
 
     public byte MsgType { get; init; }
+
+
+    public const long METADATA_REQUEST = 0;
+    public const long METADATA_DATA = 1;
+    public const long METADATA_REJECT = 2;
 }
