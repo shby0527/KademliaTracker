@@ -24,4 +24,6 @@ public interface IBitTorrentInfoHash : IDisposable
     public long PieceSize { get; }
 
     ValueTask BeginGetMetadata();
+
+    TorrentDirectoryInfo TorrentDirectoryInfo { get; }
 }

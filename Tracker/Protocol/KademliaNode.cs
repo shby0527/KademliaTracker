@@ -599,6 +599,14 @@ public class KademliaNode
         waitMetadata.Start();
     }
 
+    public string ShowReceivedMetadata()
+    {
+        var received = from p in _torrentInfoHashManager
+            where p.HasMetadataReceived
+            select p;
+        return string.Join('\n', received.Select(p => $"{p.HashText}: \n\t\t {p.TorrentDirectoryInfo}"));
+    }
+
     private void OnNodeCheckPing(KBucket bucket, NodeInfo node)
     {
         _logger.LogTrace("start node check ping, id {id}", node.NodeId);

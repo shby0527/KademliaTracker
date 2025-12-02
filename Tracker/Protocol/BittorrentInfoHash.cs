@@ -8,6 +8,7 @@ using Umi.Dht.Client.Bittorrent;
 using Umi.Dht.Client.Bittorrent.Sample;
 using Umi.Dht.Client.Protocol;
 using Umi.Dht.Client.TorrentIO;
+using Umi.Dht.Client.TorrentIO.StorageInfo;
 using Umi.Dht.Client.TorrentIO.Utils;
 
 internal class BitTorrentInfoHashPrivateTracker(
@@ -24,13 +25,15 @@ internal class BitTorrentInfoHashPrivateTracker(
 
     private bool _hasMetadataReceived = false;
 
+    private TorrentDirectoryInfo _directoryInfo;
+
     private readonly LinkedList<(long Piece, ReadOnlyMemory<byte> Buffer)> _metadataBuffers = [];
 
     private long _pieceSize = 0;
 
     private long _pieceCount = 0;
 
-    public string HashText => BitConverter.ToString(btih).Replace("-", "");
+    public string HashText => Convert.ToHexString(btih);
     public ReadOnlySpan<byte> Hash => _btih.Span;
     public BigInteger MaxDistance { get; private set; } = 0;
 
@@ -115,7 +118,7 @@ internal class BitTorrentInfoHashPrivateTracker(
     private void DoMetadataParser()
     {
         logger.LogInformation("begin parser metadata");
-        _hasMetadataReceived = true;
+
         using var memoryOwner = MemoryPool<byte>.Shared.Rent((int)_pieceSize);
         var memory = memoryOwner.Memory;
         var node = _metadataBuffers.First;
@@ -125,21 +128,22 @@ internal class BitTorrentInfoHashPrivateTracker(
             memory = memory[node.Value.Buffer.Length..];
             node = node.Next;
         }
+        //
+        // using var sha1 = SHA1.Create();
+        // ReadOnlySpan<byte> computeHash = sha1.ComputeHash(memoryOwner.Memory.ToArray());
+        // if (!computeHash.SequenceEqual(_btih.Span))
+        // {
+        //     logger.LogWarning("info hash compute hash not matched btih:{btih}, sha1: {sha1}",
+        //         Convert.ToHexString(_btih.Span), Convert.ToHexString(computeHash));
+        //     return;
+        // }
 
-        using var sha1 = SHA1.Create();
-        ReadOnlySpan<byte> computeHash = sha1.ComputeHash(memoryOwner.Memory.ToArray());
-        if (!computeHash.SequenceEqual(_btih.Span))
-        {
-            logger.LogWarning("info hash compute hash not matched btih:{btih}, sha1: {sha1}",
-                Convert.ToHexString(_btih.Span), Convert.ToHexString(computeHash));
-            return;
-        }
-
+        _directoryInfo = TorrentFileDecode.DecodeInfo(memoryOwner.Memory.Span);
         _storage?.Save(memoryOwner.Memory.Span);
-        if (logger.IsEnabled(LogLevel.Debug))
+        _hasMetadataReceived = true;
+        if (logger.IsEnabled(LogLevel.Information))
         {
-            var info = TorrentFileDecode.DecodeInfo(memoryOwner.Memory.Span);
-            logger.LogDebug("info dic is {dic}", info);
+            logger.LogInformation("info dic is {dic}", _directoryInfo);
         }
     }
 
@@ -241,6 +245,19 @@ internal class BitTorrentInfoHashPrivateTracker(
         }
 
         logger.LogWarning("{btih} has no more peers", btih);
+    }
+
+    public TorrentDirectoryInfo TorrentDirectoryInfo
+    {
+        get
+        {
+            if (_hasMetadataReceived)
+            {
+                return _directoryInfo;
+            }
+
+            throw new InvalidOperationException("metadata has not been received");
+        }
     }
 
     public void Dispose()

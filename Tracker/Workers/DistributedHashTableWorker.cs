@@ -64,6 +64,12 @@ public class DistributedHashTableWorker(
         _command.Add("get_metadata", this.GetMetadata);
         _command.Add("rebootstrap", this.ReBootstrap);
         _command.Add("wanIP", this.GetWanIP);
+        _command.Add("show_metadata", this.ShowMetadata);
+    }
+
+    private string ShowMetadata(IDictionary<string, string> arg)
+    {
+        return _kademliaNode?.ShowReceivedMetadata() ?? "not ready";
     }
 
     private string GetWanIP(IDictionary<string, string> dictionary)
@@ -96,6 +102,9 @@ public class DistributedHashTableWorker(
                listbtih       list BitTorrent Info Hash and peers counts
                avg            avg all count
                get_metadata   begin get all bt info hash metadata
+                              arguments 
+                                   btih=<value>   get this btih metadata
+               show_metadata  show received metadata
                wanIP          get UPnP Wan IP Address
                """;
     }
