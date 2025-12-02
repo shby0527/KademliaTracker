@@ -52,6 +52,30 @@ public static class TorrentFileDecode
         };
     }
 
+    public static TorrentDirectoryInfo DecodeInfo(ReadOnlySpan<byte> data)
+    {
+        var dataBuffer = data.GetEnumerator();
+        if (!dataBuffer.MoveNext()) throw new FormatException("can not decode empty file");
+        var dic = BEncoder.BDecodeToMap(ref dataBuffer);
+        return new TorrentDirectoryInfo
+        {
+            Name = ConvertToStringOrThrowWhenNotFound<FormatException>(dic, "name", Encoding.UTF8),
+            PieceLength = ConvertOrThrowWhenNotFound<long, FormatException>(dic, "piece length"),
+            Pieces = ConvertToBytesList(ConvertToSpanOrThrowWhenNotFound<FormatException>(dic, "pieces")),
+            Length = ConvertTo<long?>(dic, "length"),
+            Files = ConvertTo<IEnumerable<object>>(dic, "files")?.Select(e =>
+                new TorrentFileList
+                {
+                    Length = ConvertOrThrowWhenNotFound<long, FormatException>((IDictionary<string, object>)e,
+                        "length"),
+                    Path = Path.Combine(
+                        ConvertOrThrowWhenNotFound<IEnumerable<object>, FormatException>(
+                                (IDictionary<string, object>)e, "path")
+                            .Select(p => Encoding.UTF8.GetString((byte[])p)).ToArray())
+                }),
+        };
+    }
+
     private static IEnumerable<byte[]> ConvertToBytesList(ReadOnlySpan<byte> data)
     {
         List<byte[]> rts = [];

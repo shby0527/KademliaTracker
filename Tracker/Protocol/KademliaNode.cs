@@ -588,10 +588,10 @@ public class KademliaNode
         _logger.LogDebug("bucket {dists}-{diste} refreshing", bucket.BucketDistance[0], bucket.BucketDistance[1]);
     }
 
-    public void QueueReceiveInfoHashMetadata()
+    public void QueueReceiveInfoHashMetadata(string btih)
     {
         _logger.LogDebug("begin receiving  info hash metadata, total {t}", _torrentInfoHashManager.Count);
-        var waitMetadata = new Thread(_torrentInfoHashManager.TryReceiveInfoHashMetadata)
+        var waitMetadata = new Thread(() => _torrentInfoHashManager.TryReceiveInfoHashMetadata(btih))
         {
             IsBackground = true,
             Name = "Metadata Receiver"

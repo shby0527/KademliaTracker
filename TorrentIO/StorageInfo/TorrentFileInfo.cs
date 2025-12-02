@@ -78,7 +78,7 @@ public readonly struct TorrentDirectoryInfo
         var sb = new StringBuilder($"Name: {Name}\n Piece Length: {PieceLength}\n");
         foreach (var piece in Pieces)
         {
-            sb.AppendLine($"\t - {BitConverter.ToString(piece).Replace("-", "")}");
+            sb.AppendLine($"\t - {Convert.ToHexString(piece)}");
         }
 
         if (Length != null)

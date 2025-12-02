@@ -392,7 +392,8 @@ public sealed class SamplePeer : IBittorrentPeer
             return Task.CompletedTask;
         }
 
-        var map = BEncoder.BDecodeToMap(ref enumerator);
+        int consumed = 1;
+        var map = BEncoder.BDecodeToMap(ref enumerator, ref consumed);
         if (!map.TryGetValue("msg_type", out var omsgtype) || omsgtype is not long msgType)
         {
             _logger.LogWarning("msg_type unknown");
@@ -417,16 +418,9 @@ public sealed class SamplePeer : IBittorrentPeer
             return Task.CompletedTask;
         }
 
-        // 读取后续内容
-        int s = 0;
-        while (enumerator.MoveNext())
-        {
-            s++;
-        }
-
-        int dindex = payload.Length - s;
+        consumed++;
         this.MetadataPiece?.Invoke(this, new MetadataPieceEventArg(
-            payload[dindex..], piece, msgType, ttsize));
+            payload[consumed..], piece, msgType, ttsize));
         return Task.CompletedTask;
     }
 

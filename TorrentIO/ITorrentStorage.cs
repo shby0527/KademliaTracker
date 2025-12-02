@@ -8,5 +8,5 @@ public interface ITorrentStorage
 
     IEnumerable<TorrentFileInfo> Search(string file);
 
-    TorrentFileInfo Exists(ReadOnlySpan<byte> infohash);
+    TorrentFileInfo? Exists(ReadOnlySpan<byte> infohash);
 }

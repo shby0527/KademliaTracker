@@ -43,13 +43,16 @@ public sealed class BitTorrentInfoHashManager(IServiceProvider provider) : IEnum
         return new PeerInfoPrivateTracker(address, port, node);
     }
 
-    public void TryReceiveInfoHashMetadata()
+    public void TryReceiveInfoHashMetadata(string btih)
     {
         // 尝试开始获取info hash 的 metadata， 可能的
-        var waitHash = from p in _bitTorrentInfo.Values
-            where !p.HasMetadataReceived
-            select p.BeginGetMetadata().AsTask();
-        Task.WaitAll(waitHash);
+        if (_bitTorrentInfo.TryGetValue(btih, out var hash))
+        {
+            hash.BeginGetMetadata()
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
+        }
     }
 
     public IEnumerator<IBitTorrentInfoHash> GetEnumerator()

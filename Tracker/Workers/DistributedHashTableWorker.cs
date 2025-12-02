@@ -127,8 +127,13 @@ public class DistributedHashTableWorker(
 
     private string GetMetadata(IDictionary<string, string> arguments)
     {
-        _kademliaNode?.QueueReceiveInfoHashMetadata();
-        return "Now, getting metadata";
+        if (arguments.TryGetValue("btih", out var value))
+        {
+            _kademliaNode?.QueueReceiveInfoHashMetadata(value);
+            return "Now, getting metadata";
+        }
+
+        return "no btih found";
     }
 
 

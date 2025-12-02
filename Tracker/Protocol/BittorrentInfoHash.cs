@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Immutable;
 using System.Numerics;
 using System.Security.Cryptography;
@@ -7,6 +8,7 @@ using Umi.Dht.Client.Bittorrent;
 using Umi.Dht.Client.Bittorrent.Sample;
 using Umi.Dht.Client.Protocol;
 using Umi.Dht.Client.TorrentIO;
+using Umi.Dht.Client.TorrentIO.Utils;
 
 internal class BitTorrentInfoHashPrivateTracker(
     byte[] btih,
@@ -22,9 +24,7 @@ internal class BitTorrentInfoHashPrivateTracker(
 
     private bool _hasMetadataReceived = false;
 
-    private readonly LinkedList<ReadOnlyMemory<byte>> _metadataBuffers = [];
-
-    private readonly BigInteger _pieceBitMap = BigInteger.Zero;
+    private readonly LinkedList<(long Piece, ReadOnlyMemory<byte> Buffer)> _metadataBuffers = [];
 
     private long _pieceSize = 0;
 
@@ -76,22 +76,35 @@ internal class BitTorrentInfoHashPrivateTracker(
         try
         {
             _semaphore.WaitOne();
-            logger.LogInformation("metadata received");
-            if (e.MsgType == 1)
-            {
-                var buffer = e.Buffer;
-                _metadataBuffers.AddLast(buffer[..(int)e.Length]);
-                if (_metadataBuffers.Sum(e => e.Length) > e.Length)
-                {
-                    _pieceSize = e.Length;
-                    // 完整的
-                    this.DoMetadataParser();
-                    return;
-                }
+            logger.LogInformation("metadata received, piece: {piece}", e.Piece);
+            if (e.MsgType != 1) return;
+            _pieceSize = e.Length;
+            // 已经存在的分片，就应该无视
+            if (_metadataBuffers.Any(p => p.Piece == e.Piece)) return;
+            var buffer = e.Buffer;
+            Memory<byte> memory = new byte[buffer.Length];
 
-                sender.GetHashMetadata(e.Piece + 1)
-                    .GetAwaiter().OnCompleted(() => logger.LogTrace("{picec} received", e.Piece + 1));
+            buffer.CopyTo(memory);
+            memory = memory[..(int)(e.Length > buffer.Length ? buffer.Length : e.Length)];
+            var node = _metadataBuffers.Last;
+            while (node is not null)
+            {
+                if (node.Value.Piece < e.Piece) break;
+                node = node.Previous;
             }
+
+            if (node is null) _metadataBuffers.AddFirst((e.Piece, memory));
+            else _metadataBuffers.AddAfter(node, (e.Piece, memory));
+
+            if (_metadataBuffers.Sum(p => p.Buffer.Length) >= e.Length)
+            {
+                // 完整的
+                this.DoMetadataParser();
+                return;
+            }
+
+            sender.GetHashMetadata(e.Piece + 1)
+                .GetAwaiter().OnCompleted(() => logger.LogTrace("{picec} received", e.Piece + 1));
         }
         finally
         {
@@ -101,8 +114,33 @@ internal class BitTorrentInfoHashPrivateTracker(
 
     private void DoMetadataParser()
     {
-        
+        logger.LogInformation("begin parser metadata");
         _hasMetadataReceived = true;
+        using var memoryOwner = MemoryPool<byte>.Shared.Rent((int)_pieceSize);
+        var memory = memoryOwner.Memory;
+        var node = _metadataBuffers.First;
+        while (node is not null)
+        {
+            node.Value.Buffer.CopyTo(memory);
+            memory = memory[node.Value.Buffer.Length..];
+            node = node.Next;
+        }
+
+        using var sha1 = SHA1.Create();
+        ReadOnlySpan<byte> computeHash = sha1.ComputeHash(memoryOwner.Memory.ToArray());
+        if (!computeHash.SequenceEqual(_btih.Span))
+        {
+            logger.LogWarning("info hash compute hash not matched btih:{btih}, sha1: {sha1}",
+                Convert.ToHexString(_btih.Span), Convert.ToHexString(computeHash));
+            return;
+        }
+
+        _storage?.Save(memoryOwner.Memory.Span);
+        if (logger.IsEnabled(LogLevel.Debug))
+        {
+            var info = TorrentFileDecode.DecodeInfo(memoryOwner.Memory.Span);
+            logger.LogDebug("info dic is {dic}", info);
+        }
     }
 
     private void OnSamplePeerOnPeerExchange(IBittorrentPeer sender, PeerExchangeEventArg e)

@@ -27,11 +27,19 @@ public static class BEncoder
 
     public static Dictionary<string, object> BDecodeToMap(ref ReadOnlySpan<byte>.Enumerator chars)
     {
+        var ignored = 0;
+        return BDecodeToMap(ref chars, ref ignored);
+    }
+
+    public static Dictionary<string, object> BDecodeToMap(ref ReadOnlySpan<byte>.Enumerator chars, ref int consumed)
+    {
         if (chars.Current != D) throw new FormatException("can not convert to map");
         var dictionary = new Dictionary<string, object>();
         while (chars.MoveNext() && chars.Current != E)
         {
-            var key = Encoding.ASCII.GetString(BDecodeToString(ref chars));
+            consumed++;
+            var key = Encoding.ASCII.GetString(BDecodeToString(ref chars, ref consumed));
+            consumed++;
             if (!chars.MoveNext())
             {
                 dictionary[key] = "";
@@ -40,57 +48,59 @@ public static class BEncoder
 
             if (chars.Current == I)
             {
-                dictionary[key] = BDecodeToInteger(ref chars);
+                dictionary[key] = BDecodeToInteger(ref chars, ref consumed);
             }
             else if (chars.Current == L)
             {
-                dictionary[key] = BDecodeToList(ref chars);
+                dictionary[key] = BDecodeToList(ref chars, ref consumed);
             }
             else if (chars.Current == D)
             {
-                dictionary[key] = BDecodeToMap(ref chars);
+                dictionary[key] = BDecodeToMap(ref chars, ref consumed);
             }
             else
             {
-                dictionary[key] = BDecodeToString(ref chars).ToArray();
+                dictionary[key] = BDecodeToString(ref chars, ref consumed).ToArray();
             }
         }
 
         return dictionary;
     }
 
-    public static List<object> BDecodeToList(ref ReadOnlySpan<byte>.Enumerator chars)
+    public static List<object> BDecodeToList(ref ReadOnlySpan<byte>.Enumerator chars, ref int consumed)
     {
         if (chars.Current != L) throw new FormatException("can not convert to list");
         List<object> result = [];
         while (chars.MoveNext() && chars.Current != E)
         {
+            consumed++;
             if (chars.Current == I)
             {
-                result.Add(BDecodeToInteger(ref chars));
+                result.Add(BDecodeToInteger(ref chars, ref consumed));
             }
             else if (chars.Current == L)
             {
-                result.Add(BDecodeToList(ref chars));
+                result.Add(BDecodeToList(ref chars, ref consumed));
             }
             else if (chars.Current == D)
             {
-                result.Add(BDecodeToMap(ref chars));
+                result.Add(BDecodeToMap(ref chars, ref consumed));
             }
             else
             {
-                result.Add(BDecodeToString(ref chars).ToArray());
+                result.Add(BDecodeToString(ref chars, ref consumed).ToArray());
             }
         }
-
+        consumed++;
         return result;
     }
 
-    public static ReadOnlySpan<byte> BDecodeToString(ref ReadOnlySpan<byte>.Enumerator chars)
+    public static ReadOnlySpan<byte> BDecodeToString(ref ReadOnlySpan<byte>.Enumerator chars, ref int consumer)
     {
         StringBuilder lengthStr = new();
         do
         {
+            consumer++;
             lengthStr.Append(Encoding.ASCII.GetString([chars.Current]));
         } while (chars.MoveNext() && chars.Current != SPM);
 
@@ -102,6 +112,7 @@ public static class BEncoder
         List<byte> bytes = [];
         while (length > 0 && chars.MoveNext())
         {
+            consumer++;
             bytes.Add(chars.Current);
             length--;
         }
@@ -110,15 +121,16 @@ public static class BEncoder
         return bytes.ToArray();
     }
 
-    public static long BDecodeToInteger(ref ReadOnlySpan<byte>.Enumerator chars)
+    public static long BDecodeToInteger(ref ReadOnlySpan<byte>.Enumerator chars, ref int consumed)
     {
         if (chars.Current != I) throw new FormatException("can not convert to integer");
         StringBuilder number = new();
         while (chars.MoveNext() && chars.Current != E)
         {
+            consumed++;
             number.Append(Encoding.ASCII.GetString([chars.Current]));
         }
-
+        consumed++;
         if (!long.TryParse(number.ToString(), out var i))
         {
             throw new FormatException("can not convert to integer");
