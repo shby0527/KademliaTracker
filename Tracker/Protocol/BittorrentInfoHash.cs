@@ -11,17 +11,21 @@ using Umi.Dht.Client.TorrentIO;
 using Umi.Dht.Client.TorrentIO.StorageInfo;
 using Umi.Dht.Client.TorrentIO.Utils;
 
-internal class BitTorrentInfoHashPrivateTracker(
-    byte[] btih,
-    ILogger<BitTorrentInfoHashPrivateTracker> logger,
-    IServiceProvider provider)
-    : IBitTorrentInfoHash
+internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
 {
-    private readonly ReadOnlyMemory<byte> _btih = btih;
+    private static readonly RandomNumberGenerator Generator = RandomNumberGenerator.Create();
 
-    private readonly ITorrentStorage? _storage = provider.GetService<ITorrentStorage>();
+    private readonly ReadOnlyMemory<byte> _btih;
+
+    private readonly ReadOnlyMemory<byte> _peerId;
+
+    private readonly ITorrentStorage? _storage;
 
     private readonly LinkedList<IBittorrentPeer> _bittorrentPeers = [];
+
+    private readonly IServiceProvider _provider;
+
+    private readonly ILogger<BitTorrentInfoHashPrivateTracker> _logger;
 
     private bool _hasMetadataReceived = false;
 
@@ -33,7 +37,7 @@ internal class BitTorrentInfoHashPrivateTracker(
 
     private long _pieceCount = 0;
 
-    public string HashText => Convert.ToHexString(btih);
+    public string HashText => Convert.ToHexString(_btih.Span);
     public ReadOnlySpan<byte> Hash => _btih.Span;
     public BigInteger MaxDistance { get; private set; } = 0;
 
@@ -41,12 +45,25 @@ internal class BitTorrentInfoHashPrivateTracker(
 
     private readonly Semaphore _semaphore = new(1, 1);
 
+    public BitTorrentInfoHashPrivateTracker(byte[] btih,
+        ILogger<BitTorrentInfoHashPrivateTracker> logger,
+        IServiceProvider provider)
+    {
+        _btih = btih;
+        _provider = provider;
+        _logger = logger;
+        Span<byte> peerId = stackalloc byte[20];
+        Generator.GetBytes(peerId);
+        _peerId = peerId.ToArray();
+        _storage = provider.GetService<ITorrentStorage>();
+    }
+
     public bool AnnounceNode(NodeInfo node)
     {
         try
         {
             _semaphore.WaitOne();
-            var distances = KRouter.ComputeDistances(node.NodeId.Span, btih);
+            var distances = KRouter.ComputeDistances(node.NodeId.Span, _btih.Span);
             if (MaxDistance > distances) return false;
             MaxDistance = distances;
             return true;
@@ -63,8 +80,8 @@ internal class BitTorrentInfoHashPrivateTracker(
         {
             if (!_bittorrentPeers.Any(p => p.Equals(peer)))
             {
-                var samplePeer = new SamplePeer(provider, peer,
-                    provider.GetRequiredService<ILogger<SamplePeer>>(), _btih.ToArray());
+                var samplePeer = new SamplePeer(_provider, peer,
+                    _provider.GetRequiredService<ILogger<SamplePeer>>(), _btih.ToArray(), _peerId.ToArray());
                 samplePeer.PeerClose += OnSamplePeerOnPeerClose;
                 samplePeer.MetadataHandshake += OnSamplePeerOnMetadataHandshake;
                 samplePeer.PeerExchange += OnSamplePeerOnPeerExchange;
@@ -79,7 +96,7 @@ internal class BitTorrentInfoHashPrivateTracker(
         try
         {
             _semaphore.WaitOne();
-            logger.LogInformation("metadata received, piece: {piece}", e.Piece);
+            _logger.LogInformation("metadata received, piece: {piece}", e.Piece);
             if (e.MsgType != 1) return;
             _pieceSize = e.Length;
             // 已经存在的分片，就应该无视
@@ -107,7 +124,7 @@ internal class BitTorrentInfoHashPrivateTracker(
             }
 
             sender.GetHashMetadata(e.Piece + 1)
-                .GetAwaiter().OnCompleted(() => logger.LogTrace("{picec} received", e.Piece + 1));
+                .GetAwaiter().OnCompleted(() => _logger.LogTrace("{picec} received", e.Piece + 1));
         }
         finally
         {
@@ -117,7 +134,7 @@ internal class BitTorrentInfoHashPrivateTracker(
 
     private void DoMetadataParser()
     {
-        logger.LogInformation("begin parser metadata");
+        _logger.LogInformation("begin parser metadata");
 
         using var memoryOwner = MemoryPool<byte>.Shared.Rent((int)_pieceSize);
         var memory = memoryOwner.Memory;
@@ -141,9 +158,9 @@ internal class BitTorrentInfoHashPrivateTracker(
         _directoryInfo = TorrentFileDecode.DecodeInfo(memoryOwner.Memory.Span);
         _storage?.Save(memoryOwner.Memory.Span);
         _hasMetadataReceived = true;
-        if (logger.IsEnabled(LogLevel.Information))
+        if (_logger.IsEnabled(LogLevel.Information))
         {
-            logger.LogInformation("info dic is {dic}", _directoryInfo);
+            _logger.LogInformation("info dic is {dic}", _directoryInfo);
         }
     }
 
@@ -152,7 +169,7 @@ internal class BitTorrentInfoHashPrivateTracker(
         try
         {
             _semaphore.WaitOne();
-            logger.LogInformation("peer exchange received");
+            _logger.LogInformation("peer exchange received");
         }
         finally
         {
@@ -165,14 +182,14 @@ internal class BitTorrentInfoHashPrivateTracker(
         try
         {
             _semaphore.WaitOne();
-            logger.LogInformation("metadata piece received, length: {l}, count: {c}",
+            _logger.LogInformation("metadata piece received, length: {l}, count: {c}",
                 e.Metadata.PieceLength, e.Metadata.PieceCount);
             this._pieceCount = e.Metadata.PieceCount;
             this._pieceSize = e.Metadata.PieceLength;
             // 这里先请求第一片
             peer.GetHashMetadata(0)
                 .GetAwaiter()
-                .OnCompleted(() => logger.LogDebug("this first piece finished request"));
+                .OnCompleted(() => _logger.LogDebug("this first piece finished request"));
         }
         finally
         {
@@ -185,7 +202,7 @@ internal class BitTorrentInfoHashPrivateTracker(
         try
         {
             _semaphore.WaitOne();
-            logger.LogDebug("peer: {address}:{port} closed", sender.Address, sender.Port);
+            _logger.LogDebug("peer: {address}:{port} closed", sender.Address, sender.Port);
             var node = _bittorrentPeers.Find((IBittorrentPeer)sender);
             if (node is not null) _bittorrentPeers.Remove(node);
         }
@@ -236,15 +253,20 @@ internal class BitTorrentInfoHashPrivateTracker(
         {
             await node.Value.Connect();
             if (node.Value.IsConnected) break;
-            var current = node;
+            var bittorrentPeer = node.Value;
+            lock (_bittorrentPeers)
+            {
+                var current = node;
+                _bittorrentPeers.Remove(current);
+                _logger.LogWarning("{btih} peer: {addr}:{port} connected failure, trying next",
+                    btih, current.Value.Address, current.Value.Port);
+            }
+
+            bittorrentPeer.Dispose();
             node = node.Next;
-            current.Value.Dispose();
-            _bittorrentPeers.Remove(current);
-            logger.LogWarning("{btih} peer: {addr}:{port} connected failure, trying next",
-                btih, current.Value.Address, current.Value.Port);
         }
 
-        logger.LogWarning("{btih} has no more peers", btih);
+        _logger.LogWarning("{btih} has no more peers", btih);
     }
 
     public TorrentDirectoryInfo TorrentDirectoryInfo
@@ -275,7 +297,7 @@ internal class BitTorrentInfoHashPrivateTracker(
                 }
                 catch (Exception e)
                 {
-                    logger.LogError(e, "Dispose Error, {ip}:{port}", first.Value.Address, first.Value.Port);
+                    _logger.LogError(e, "Dispose Error, {ip}:{port}", first.Value.Address, first.Value.Port);
                 }
 
                 var current = first;

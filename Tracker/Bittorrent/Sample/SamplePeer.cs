@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO.Pipelines;
 using System.Net;
 using System.Net.Sockets;
-using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -22,8 +21,6 @@ public sealed class SamplePeer : IBittorrentPeer
     private const byte UT_METADATA_ID = 0x2;
 
     private const byte UT_PEX_ID = 0x3;
-
-    private static readonly RandomNumberGenerator _generator = RandomNumberGenerator.Create();
 
     private readonly ILogger<SamplePeer> _logger;
 
@@ -69,7 +66,10 @@ public sealed class SamplePeer : IBittorrentPeer
     private long _pieceCount = 0;
 
 
-    public SamplePeer(IServiceProvider provider, IPeer peer, ILogger<SamplePeer> logger, byte[] infoHash)
+    public SamplePeer(IServiceProvider provider, IPeer peer,
+        ILogger<SamplePeer> logger,
+        byte[] infoHash,
+        byte[] peerId)
     {
         _provider = provider;
         _logger = logger;
@@ -85,11 +85,9 @@ public sealed class SamplePeer : IBittorrentPeer
         _receiveEventArgs = new SocketAsyncEventArgs();
         _receiveEventArgs.SetBuffer(new Memory<byte>(new byte[4096]));
         _receiveEventArgs.Completed += this.OnSocketCompleted;
-        Span<byte> peerId = stackalloc byte[20];
         // 直接随机生成一个 
         _connectedPeerId = new byte[20];
-        _generator.GetBytes(peerId);
-        _peerId = new ReadOnlyMemory<byte>(peerId.ToArray());
+        _peerId = peerId;
         _processThread = new Thread(this.PackageProcess)
         {
             Name = $"{Convert.ToHexStringLower(_peerId.Span)}-Process",

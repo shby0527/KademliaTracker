@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using Microsoft.Extensions.DependencyInjection;
@@ -87,7 +88,8 @@ public partial class KRouter : IDisposable
         }
 
         // no found ? return the latest
-        return _buckets.Last!;
+        Debug.Assert(_buckets.Last is not null, "buckets latest is null");
+        return _buckets.Last;
     }
 
 
