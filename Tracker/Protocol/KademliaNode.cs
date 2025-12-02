@@ -347,22 +347,33 @@ public class KademliaNode
         {
             _kRouter.AdjustNode(node);
         }
+        else
+        {
+            node = new NodeInfo()
+            {
+                NodeId = id.ToArray(),
+                NodeAddress = ip.Address,
+                NodePort = ip.Port,
+                Distance = KRouter.ComputeDistances(CLIENT_NODE_ID.Span, id)
+            };
+            _kRouter.AddNode(node);
+        }
 
         ReadOnlySpan<byte> hash = (byte[])arguments["info_hash"];
         var infoHash = _torrentInfoHashManager.AddBitTorrentInfoHash(hash);
         if (arguments.TryGetValue("implied_port", out var iPort) && iPort is long p && p != 0)
         {
-            var peer = BitTorrentInfoHashManager.CreatePeer(ip.Address, ip.Port, node!);
+            var peer = BitTorrentInfoHashManager.CreatePeer(ip.Address, ip.Port, node);
             infoHash.AddPeers([peer]);
         }
         else
         {
             var eport = (long)arguments["port"];
-            var peer = BitTorrentInfoHashManager.CreatePeer(ip.Address, (int)eport, node!);
+            var peer = BitTorrentInfoHashManager.CreatePeer(ip.Address, (int)eport, node);
             infoHash.AddPeers([peer]);
         }
 
-        infoHash.AnnounceNode(node!);
+        infoHash.AnnounceNode(node);
 
         var magnetLink = $"magnet:?xt=urn:btih:{BitConverter.ToString(hash.ToArray()).Replace("-", "")}";
         _logger.LogTrace("found magnet link {link}", magnetLink);
