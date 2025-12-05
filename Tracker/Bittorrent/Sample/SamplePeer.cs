@@ -18,9 +18,9 @@ namespace Umi.Dht.Client.Bittorrent.Sample;
 
 public sealed class SamplePeer : IBittorrentPeer
 {
-    private const byte UT_METADATA_ID = 0x2;
+    private const byte UtMetadataId = 0x2;
 
-    private const byte UT_PEX_ID = 0x3;
+    private const byte UtPexId = 0x3;
 
     private readonly ILogger<SamplePeer> _logger;
 
@@ -56,8 +56,8 @@ public sealed class SamplePeer : IBittorrentPeer
     private volatile bool _connecting = false;
 
     // 握手后赋值
-    private long _ut_metadata_id = 0x0;
-    private long _ut_pex_id = 0x0;
+    private long _utMetadataId = 0x0;
+    private long _utPexId = 0x0;
 
     // 对端 peer id
     private readonly Memory<byte> _connectedPeerId;
@@ -116,7 +116,9 @@ public sealed class SamplePeer : IBittorrentPeer
             if (!_connecting)
             {
                 _connecting = true;
-                await _client.ConnectAsync(Address, Port);
+                using CancellationTokenSource ctx = new();
+                ctx.CancelAfter(TimeSpan.FromSeconds(30));
+                await _client.ConnectAsync(Address, Port, ctx.Token);
                 _connecting = false;
             }
             else
@@ -127,7 +129,8 @@ public sealed class SamplePeer : IBittorrentPeer
         catch (Exception e)
         {
             _logger.LogWarning(e, "connect failure");
-            return;
+            _connecting = false;
+            throw;
         }
 
         IsConnected = true;
@@ -137,6 +140,11 @@ public sealed class SamplePeer : IBittorrentPeer
             ThreadPool.QueueUserWorkItem(_ => this.OnSocketCompleted(_client, _receiveEventArgs));
         }
 
+        await this.DoPeerHandshake();
+    }
+
+    private async Task DoPeerHandshake()
+    {
         Span<byte> reserve = stackalloc byte[8];
         reserve[5] = 0x10;
         var handshake = new BittorrentHandshake
@@ -157,6 +165,7 @@ public sealed class SamplePeer : IBittorrentPeer
                 .OnCompleted(() => _logger.LogTrace("timer keepalive finished")),
             null, TimeSpan.FromMinutes(2),
             TimeSpan.FromMinutes(2));
+        // 超时等待
     }
 
     public async Task Disconnect()
@@ -346,10 +355,10 @@ public sealed class SamplePeer : IBittorrentPeer
         if (mSubMap.TryGetValue("ut_metadata", out var metadata) && metadata is long utMetadata && utMetadata != 0)
         {
             _logger.LogInformation("found ut_metadata extension, id is {id}", utMetadata);
-            _ut_metadata_id = utMetadata;
+            _utMetadataId = utMetadata;
+            _hasMetadataHandshake = true;
             if (map.TryGetValue("metadata_size", out var metadataSize) && metadataSize is long size)
             {
-                _hasMetadataHandshake = true;
                 _pieceLength = size;
                 _pieceCount = size / BittorrentMessage.PIECE_SIZE;
                 _logger.LogDebug("metadata handshake processed, piece length {l}, total count {c}",
@@ -364,16 +373,13 @@ public sealed class SamplePeer : IBittorrentPeer
         if (mSubMap.TryGetValue("ut_pex", out var pex) && pex is long utPex && utPex != 0)
         {
             _logger.LogInformation("found ut_pex extension, id is {id}", utPex);
-            _ut_pex_id = utPex;
+            _utPexId = utPex;
             _peerHasPex = true;
         }
 
         _hasExtensionHandshake = true;
-        MetadataHandshake?.Invoke(this, new MetadataHandshakeEventArg(new MetadataPiece
-        {
-            PieceCount = _pieceCount,
-            PieceLength = _pieceLength,
-        }));
+        ExtensionHandshake?.Invoke(this,
+            new ExtensionHandshake(_hasMetadataHandshake, _hasPeerHandshake, _pieceLength));
         _logger.LogTrace("end process Extension Handshake, other package {package}", map);
     }
 
@@ -468,10 +474,10 @@ public sealed class SamplePeer : IBittorrentPeer
                         case 0x0:
                             await this.OnExtensionHandshake(message.Memory);
                             break;
-                        case UT_METADATA_ID:
+                        case UtMetadataId:
                             await this.OnMetadataReceived(message.Memory);
                             break;
-                        case UT_PEX_ID:
+                        case UtPexId:
                             await this.OnPeerExchangeMsg(message.Memory);
                             break;
                         default:
@@ -503,8 +509,8 @@ public sealed class SamplePeer : IBittorrentPeer
     {
         var mSub = new Dictionary<string, object>
         {
-            { "ut_metadata", (long)UT_METADATA_ID },
-            { "ut_pex", (long)UT_PEX_ID }
+            { "ut_metadata", (long)UtMetadataId },
+            { "ut_pex", (long)UtPexId }
         };
         var bd = new Dictionary<string, object>
         {
@@ -549,12 +555,12 @@ public sealed class SamplePeer : IBittorrentPeer
         Span<byte> d = stackalloc byte[6 + requestData.Length];
         BinaryPrimitives.WriteUInt32BigEndian(d, length);
         d[4] = BittorrentMessage.EXTENDED;
-        d[5] = (byte)_ut_metadata_id;
+        d[5] = (byte)_utMetadataId;
         requestData.CopyTo(d[6..]);
         await _client.SendAsync(d.ToArray());
     }
 
-    public event MetadataHandshakeEventHandler? MetadataHandshake;
+    public event ExtensionHandshakeEventHandler? ExtensionHandshake;
     public event PeerExchangeEventHandler? PeerExchange;
     public event PeerCloseEventHandler? PeerClose;
     public event MetadataPieceEventHandler? MetadataPiece;
@@ -568,18 +574,25 @@ public sealed class SamplePeer : IBittorrentPeer
 
     public void Dispose()
     {
-        _receiveEventArgs.Completed -= this.OnSocketCompleted;
-        _receiveEventArgs.Dispose();
-        if (_client.Connected)
+        try
         {
-            _client.Close();
-        }
+            _receiveEventArgs.Completed -= this.OnSocketCompleted;
+            _receiveEventArgs.Dispose();
+            if (_client.Connected)
+            {
+                _client.Close();
+            }
 
-        _semaphore.Dispose();
-        _keepAliveTimer?.Dispose();
-        _client.Dispose();
-        if (_processThread.ThreadState != ThreadState.Unstarted)
-            _processThread.Interrupt();
+            _semaphore.Dispose();
+            _keepAliveTimer?.Dispose();
+            _client.Dispose();
+            if (_processThread.ThreadState != ThreadState.Unstarted)
+                _processThread.Interrupt();
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "when dispose peer error");
+        }
     }
 
     public bool Equals(IPeer? other)

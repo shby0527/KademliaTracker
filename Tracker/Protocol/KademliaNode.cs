@@ -588,7 +588,8 @@ public class KademliaNode
         StringBuilder sb = new();
         foreach (var item in _torrentInfoHashManager)
         {
-            sb.Append($"{item.HashText}: peers count {item.Peers.Count.ToString()}\r\n");
+            sb.Append(
+                $"{item.HashText}: peers count {item.Peers.Count.ToString()}, metadata received: {item.HasMetadataReceived}\r\n");
         }
 
         return sb.ToString();

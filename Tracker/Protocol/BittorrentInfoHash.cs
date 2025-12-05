@@ -1,10 +1,12 @@
 using System.Buffers;
 using System.Collections.Immutable;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Umi.Dht.Client.Bittorrent;
+using Umi.Dht.Client.Bittorrent.MsgPack;
 using Umi.Dht.Client.Bittorrent.Sample;
 using Umi.Dht.Client.Protocol;
 using Umi.Dht.Client.TorrentIO;
@@ -83,7 +85,7 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
                 var samplePeer = new SamplePeer(_provider, peer,
                     _provider.GetRequiredService<ILogger<SamplePeer>>(), _btih.ToArray(), _peerId.ToArray());
                 samplePeer.PeerClose += OnSamplePeerOnPeerClose;
-                samplePeer.MetadataHandshake += OnSamplePeerOnMetadataHandshake;
+                samplePeer.ExtensionHandshake += OnSamplePeerOnExtensionHandshake;
                 samplePeer.PeerExchange += OnSamplePeerOnPeerExchange;
                 samplePeer.MetadataPiece += SamplePeerOnMetadataPiece;
                 _bittorrentPeers.AddLast(samplePeer);
@@ -136,27 +138,22 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
     {
         _logger.LogInformation("begin parser metadata");
 
-        using var memoryOwner = MemoryPool<byte>.Shared.Rent((int)_pieceSize);
-        var memory = memoryOwner.Memory;
-        var node = _metadataBuffers.First;
-        while (node is not null)
+        var sequence =
+            MetadataSequence.CreateSequenceFromList(_metadataBuffers.Select(p => p.Buffer));
+        byte[] buffer = new byte[sequence.Length];
+        Span<byte> merged = buffer;
+        sequence.CopyTo(merged);
+        using var sha1 = SHA1.Create();
+        ReadOnlySpan<byte> computeHash = sha1.ComputeHash(buffer);
+        if (!computeHash.SequenceEqual(_btih.Span))
         {
-            node.Value.Buffer.CopyTo(memory);
-            memory = memory[node.Value.Buffer.Length..];
-            node = node.Next;
+            _logger.LogWarning("info hash compute hash not matched btih:{btih}, sha1: {sha1}",
+                Convert.ToHexString(_btih.Span), Convert.ToHexString(computeHash));
+            return;
         }
-        //
-        // using var sha1 = SHA1.Create();
-        // ReadOnlySpan<byte> computeHash = sha1.ComputeHash(memoryOwner.Memory.ToArray());
-        // if (!computeHash.SequenceEqual(_btih.Span))
-        // {
-        //     logger.LogWarning("info hash compute hash not matched btih:{btih}, sha1: {sha1}",
-        //         Convert.ToHexString(_btih.Span), Convert.ToHexString(computeHash));
-        //     return;
-        // }
 
-        _directoryInfo = TorrentFileDecode.DecodeInfo(memoryOwner.Memory.Span);
-        _storage?.Save(memoryOwner.Memory.Span);
+        _directoryInfo = TorrentFileDecode.DecodeInfo(merged);
+        _storage?.Save(merged);
         _hasMetadataReceived = true;
         if (_logger.IsEnabled(LogLevel.Information))
         {
@@ -177,15 +174,15 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         }
     }
 
-    private void OnSamplePeerOnMetadataHandshake(IBittorrentPeer peer, MetadataHandshakeEventArg e)
+    private void OnSamplePeerOnExtensionHandshake(IBittorrentPeer peer, ExtensionHandshake e)
     {
         try
         {
             _semaphore.WaitOne();
-            _logger.LogInformation("metadata piece received, length: {l}, count: {c}",
-                e.Metadata.PieceLength, e.Metadata.PieceCount);
-            this._pieceCount = e.Metadata.PieceCount;
-            this._pieceSize = e.Metadata.PieceLength;
+            _logger.LogInformation("extension handshake finish, peer has metadata exchange: {e} peer exchange {p}, ",
+                e.HasMetadataAttr, e.HasPeerExchange);
+            this._pieceCount = 0;
+            this._pieceSize = e.MetadataLength;
             // 这里先请求第一片
             peer.GetHashMetadata(0)
                 .GetAwaiter()
@@ -251,19 +248,25 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         var node = _bittorrentPeers.First;
         while (node is not null)
         {
-            await node.Value.Connect();
-            if (node.Value.IsConnected) break;
-            var bittorrentPeer = node.Value;
-            lock (_bittorrentPeers)
+            try
             {
-                var current = node;
-                _bittorrentPeers.Remove(current);
-                _logger.LogWarning("{btih} peer: {addr}:{port} connected failure, trying next",
-                    btih, current.Value.Address, current.Value.Port);
+                await node.Value.Connect();
+                return;
             }
+            catch (Exception e)
+            {
+                var bittorrentPeer = node.Value;
+                lock (_bittorrentPeers)
+                {
+                    var current = node;
+                    _bittorrentPeers.Remove(current);
+                    _logger.LogWarning("{btih} peer: {addr}:{port} connected failure, trying next",
+                        btih, current.Value.Address, current.Value.Port);
+                }
 
-            bittorrentPeer.Dispose();
-            node = node.Next;
+                bittorrentPeer.Dispose();
+                node = node.Next;
+            }
         }
 
         _logger.LogWarning("{btih} has no more peers", btih);

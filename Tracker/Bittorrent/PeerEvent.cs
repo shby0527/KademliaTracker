@@ -36,12 +36,14 @@ public class PeerCloseEventArg(int reason, bool remove) : EventArgs
     public int Reason { get; } = reason;
 }
 
-public class MetadataHandshakeEventArg(MetadataPiece metadata) : EventArgs
+public class ExtensionHandshake(bool hasMetadataAttr, bool hasPeerExchange, long metadataLength) : EventArgs
 {
-    public MetadataPiece Metadata { get; } = metadata;
+    public bool HasMetadataAttr { get; } = hasMetadataAttr;
+    public long MetadataLength { get; } = metadataLength;
+    public bool HasPeerExchange { get; } = hasPeerExchange;
 }
 
-public delegate void MetadataHandshakeEventHandler(IBittorrentPeer peer, MetadataHandshakeEventArg e);
+public delegate void ExtensionHandshakeEventHandler(IBittorrentPeer peer, ExtensionHandshake e);
 
 public delegate void PeerExchangeEventHandler(IBittorrentPeer sender, PeerExchangeEventArg e);
 
