@@ -7,6 +7,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tracker", "Tracker\Tracker.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TorrentIO", "TorrentIO\TorrentIO.csproj", "{77279498-5F0E-4473-8D5D-98C79389C355}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Plugins", "Plugins", "{E3722F2D-B656-4A14-BD7E-4DA3C89151D4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FileSystemStorage", "Plugins\FileSystemStorage\FileSystemStorage.csproj", "{F8001F5C-2BEF-44C5-A578-DE3E7D7B7A0B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -24,5 +28,12 @@ Global
 		{77279498-5F0E-4473-8D5D-98C79389C355}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{77279498-5F0E-4473-8D5D-98C79389C355}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{77279498-5F0E-4473-8D5D-98C79389C355}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F8001F5C-2BEF-44C5-A578-DE3E7D7B7A0B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F8001F5C-2BEF-44C5-A578-DE3E7D7B7A0B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F8001F5C-2BEF-44C5-A578-DE3E7D7B7A0B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F8001F5C-2BEF-44C5-A578-DE3E7D7B7A0B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{F8001F5C-2BEF-44C5-A578-DE3E7D7B7A0B} = {E3722F2D-B656-4A14-BD7E-4DA3C89151D4}
 	EndGlobalSection
 EndGlobal
