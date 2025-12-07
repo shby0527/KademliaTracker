@@ -14,8 +14,6 @@ public interface IBittorrentPeer : IPeer, IEquatable<IBittorrentPeer>, IEquatabl
 
     MetadataPiece Metadata { get; }
 
-    Task PeersExchange(IEnumerable<IPeer> adds, IEnumerable<IPeer> remove);
-
     Task GetHashMetadata(long piece);
 
     event ExtensionHandshakeEventHandler ExtensionHandshake;

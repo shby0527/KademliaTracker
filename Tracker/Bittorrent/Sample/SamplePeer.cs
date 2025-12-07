@@ -47,13 +47,14 @@ public sealed class SamplePeer : IBittorrentPeer
     private readonly Semaphore _semaphore = new(1, 1);
 
 
+    private DateTimeOffset _aliveReceived = DateTimeOffset.UtcNow;
+
     private volatile bool _finished;
 
     private volatile bool _hasPeerHandshake = false;
     private volatile bool _hasExtensionHandshake = false;
     private volatile bool _hasMetadataHandshake = false;
     private volatile bool _peerHasPex = false;
-    private volatile bool _connecting = false;
 
     // 握手后赋值
     private long _utMetadataId = 0x0;
@@ -85,7 +86,6 @@ public sealed class SamplePeer : IBittorrentPeer
         _receiveEventArgs = new SocketAsyncEventArgs();
         _receiveEventArgs.SetBuffer(new Memory<byte>(new byte[4096]));
         _receiveEventArgs.Completed += this.OnSocketCompleted;
-        // 直接随机生成一个 
         _connectedPeerId = new byte[20];
         _peerId = peerId;
         _processThread = new Thread(this.PackageProcess)
@@ -113,23 +113,13 @@ public sealed class SamplePeer : IBittorrentPeer
         _logger.LogTrace("begin connecting {address}:{port}", Address, Port);
         try
         {
-            if (!_connecting)
-            {
-                _connecting = true;
-                using CancellationTokenSource ctx = new();
-                ctx.CancelAfter(TimeSpan.FromSeconds(30));
-                await _client.ConnectAsync(Address, Port, ctx.Token);
-                _connecting = false;
-            }
-            else
-            {
-                return;
-            }
+            using CancellationTokenSource ctx = new();
+            ctx.CancelAfter(TimeSpan.FromSeconds(30));
+            await _client.ConnectAsync(Address, Port, ctx.Token);
         }
         catch (Exception e)
         {
             _logger.LogWarning(e, "connect failure");
-            _connecting = false;
             throw;
         }
 
@@ -428,8 +418,54 @@ public sealed class SamplePeer : IBittorrentPeer
         return Task.CompletedTask;
     }
 
-    private async Task OnPeerExchangeMsg(ReadOnlyMemory<byte> buffer)
+    private Task OnPeerExchangeMsg(ReadOnlyMemory<byte> buffer)
     {
+        _logger.LogDebug("begin process peer exchange message");
+        var enumerator = buffer.Span[2..].GetEnumerator();
+        if (!enumerator.MoveNext()) return Task.CompletedTask;
+        var map = BEncoder.BDecodeToMap(ref enumerator);
+        List<IPeer> added = [];
+        List<IPeer> dropped = [];
+        if (map.TryGetValue("added", out var addedObj) && addedObj is byte[] addedData)
+        {
+            ReadOnlySpan<byte> compactAddrData = addedData;
+            for (var i = 0; i < compactAddrData.Length / 6; i += 6)
+            {
+                var oneAddr = compactAddrData[i..(i + 6)];
+                var addr = new IPAddress(oneAddr[..4]);
+                var port = BinaryPrimitives.ReadUInt16BigEndian(oneAddr[4..]);
+                var peer = BitTorrentInfoHashManager.CreatePeer(addr, port, Node);
+                added.Add(peer);
+            }
+        }
+
+        if (map.TryGetValue("added.f", out var addrf) && addrf is byte[] addrfData)
+        {
+            ReadOnlySpan<byte> compactAddrFData = addrfData;
+            for (var i = 0; i < compactAddrFData.Length; i++)
+            {
+                var flag = compactAddrFData[i];
+                _logger.LogTrace("this {i} one has {v}", i, flag);
+            }
+        }
+
+        // dropped
+        if (map.TryGetValue("dropped", out var droppedObj) && droppedObj is byte[] droppedData)
+        {
+            ReadOnlySpan<byte> compactAddrDropped = droppedData;
+            for (var i = 0; i < compactAddrDropped.Length / 6; i += 6)
+            {
+                var oneAddr = compactAddrDropped[i..(i + 6)];
+                var addr = new IPAddress(oneAddr[..4]);
+                var port = BinaryPrimitives.ReadUInt16BigEndian(oneAddr[4..]);
+                var peer = BitTorrentInfoHashManager.CreatePeer(addr, port, Node);
+                dropped.Add(peer);
+            }
+        }
+
+        // invoke event
+        this.PeerExchange?.Invoke(this, new PeerExchangeEventArg(added, dropped));
+        return Task.CompletedTask;
     }
 
     private async Task OnOtherMessage(PipeReader reader)
@@ -437,8 +473,17 @@ public sealed class SamplePeer : IBittorrentPeer
         var header = await reader.ReadAsync().AsTask().ConfigureAwait(false);
         var lengthByte = header.Buffer.FirstSpan[..4];
         var length = BinaryPrimitives.ReadUInt32BigEndian(lengthByte);
+        reader.AdvanceTo(header.Buffer.GetPosition(4));
+        _logger.LogDebug("received length {l}", length);
 
-        if (length == 0 || length > BittorrentMessage.PIECE_SIZE + 100)
+        if (length == 0)
+        {
+            _logger.LogDebug("received an keepalive msg pack");
+            _aliveReceived = DateTimeOffset.UtcNow;
+            return;
+        }
+
+        if (length > BittorrentMessage.PIECE_SIZE + 100)
         {
             reader.AdvanceTo(header.Buffer.End);
             _logger.LogDebug("peer is {addr}:{port}", Address, Port);
@@ -446,8 +491,6 @@ public sealed class SamplePeer : IBittorrentPeer
             return;
         }
 
-        reader.AdvanceTo(header.Buffer.GetPosition(4));
-        _logger.LogDebug("received length {l}", length);
 
         // read type and length
         var message = MemoryPool<byte>.Shared.Rent((int)length);
@@ -465,6 +508,7 @@ public sealed class SamplePeer : IBittorrentPeer
             buffer.Buffer.Slice(buffer.Buffer.Start, length)
                 .CopyTo(message.Memory.Span[..(int)length]);
             reader.AdvanceTo(buffer.Buffer.GetPosition(length));
+            _aliveReceived = DateTimeOffset.UtcNow;
             switch (message.Memory.Span[0])
             {
                 case BittorrentMessage.EXTENDED:
@@ -499,6 +543,21 @@ public sealed class SamplePeer : IBittorrentPeer
 
     private async Task KeepAlive()
     {
+        if (!_hasPeerHandshake)
+        {
+            _logger.LogWarning("peer has no reponse for handshake");
+            await this.Disconnect();
+            return;
+        }
+
+        if (_aliveReceived + TimeSpan.FromMinutes(10) < DateTimeOffset.UtcNow)
+        {
+            // not alive peer ,disconnect
+            _logger.LogWarning("peer not alive");
+            await this.Disconnect();
+            return;
+        }
+
         Span<byte> data = stackalloc byte[4];
         var success = BinaryPrimitives.TryWriteUInt32BigEndian(data, 0x0);
         Debug.Assert(success, "Convert failure");
@@ -515,26 +574,16 @@ public sealed class SamplePeer : IBittorrentPeer
         var bd = new Dictionary<string, object>
         {
             { "m", mSub },
-            { "v", "qb" }
+            { "v", "libKad/1.0" }
         };
         var encode = BEncoder.BEncode(bd);
-        using var memory = MemoryPool<byte>.Shared.Rent(6 + encode.Length + 5);
+        using var memory = MemoryPool<byte>.Shared.Rent(6 + encode.Length);
         BinaryPrimitives.WriteUInt32BigEndian(memory.Memory.Span[..4], 2 + (uint)encode.Length);
         memory.Memory.Span[4] = BittorrentMessage.EXTENDED;
         memory.Memory.Span[5] = 0x0;
         encode.CopyTo(memory.Memory.Span[6..]);
-        var instent = memory.Memory.Span[(6 + encode.Length)..];
-        BinaryPrimitives.WriteUInt32BigEndian(instent, 1);
-        instent[4] = BittorrentMessage.INTERESTED;
-        var sended = await _client.SendAsync(memory.Memory[..(6 + encode.Length + 5)]);
+        var sended = await _client.SendAsync(memory.Memory[..(6 + encode.Length)]);
         _logger.LogTrace("send bytes {s}", sended);
-    }
-
-    public async Task PeersExchange(IEnumerable<IPeer> adds, IEnumerable<IPeer> remove)
-    {
-        if (!_peerHasPex) return;
-
-        return;
     }
 
     public async Task GetHashMetadata(long piece)

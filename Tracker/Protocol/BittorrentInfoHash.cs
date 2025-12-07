@@ -1,7 +1,6 @@
 using System.Buffers;
 using System.Collections.Immutable;
 using System.Numerics;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -140,7 +139,7 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
 
         var sequence =
             MetadataSequence.CreateSequenceFromList(_metadataBuffers.Select(p => p.Buffer));
-        byte[] buffer = new byte[sequence.Length];
+        var buffer = new byte[sequence.Length];
         Span<byte> merged = buffer;
         sequence.CopyTo(merged);
         using var sha1 = SHA1.Create();
