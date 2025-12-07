@@ -77,18 +77,25 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
 
     public void AddPeers(IEnumerable<IPeer> peers)
     {
-        foreach (var peer in peers)
+        _semaphore.WaitOne();
+        try
         {
-            if (!_bittorrentPeers.Any(p => p.Equals(peer)))
+            foreach (var peer in peers)
             {
+                if (_bittorrentPeers.Any(p => p.Equals(peer))) continue;
                 var samplePeer = new SamplePeer(_provider, peer,
                     _provider.GetRequiredService<ILogger<SamplePeer>>(), _btih.ToArray(), _peerId.ToArray());
-                samplePeer.PeerClose += OnSamplePeerOnPeerClose;
-                samplePeer.ExtensionHandshake += OnSamplePeerOnExtensionHandshake;
-                samplePeer.PeerExchange += OnSamplePeerOnPeerExchange;
-                samplePeer.MetadataPiece += SamplePeerOnMetadataPiece;
+                samplePeer.PeerClose += this.OnSamplePeerOnPeerClose;
+                samplePeer.ExtensionHandshake += this.OnSamplePeerOnExtensionHandshake;
+                samplePeer.PeerExchange += this.OnSamplePeerOnPeerExchange;
+                samplePeer.MetadataPiece += this.SamplePeerOnMetadataPiece;
                 _bittorrentPeers.AddLast(samplePeer);
             }
+        }
+        catch (Exception e)
+        {
+            _semaphore.Release();
+            _logger.LogError(e, "add peer error");
         }
     }
 
@@ -162,14 +169,33 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
 
     private void OnSamplePeerOnPeerExchange(IBittorrentPeer sender, PeerExchangeEventArg e)
     {
+        _logger.LogInformation("peer exchange received");
+        this.AddPeers(e.Add);
+        _semaphore.WaitOne();
         try
         {
-            _semaphore.WaitOne();
-            _logger.LogInformation("peer exchange received");
+            var remove = e.Remove;
+            foreach (var peer in remove)
+            {
+                var r = _bittorrentPeers.FirstOrDefault(p => p.Equals(peer));
+                if (r is null) continue;
+                _bittorrentPeers.Remove(r);
+                if (r.IsConnected)
+                {
+                    r.Disconnect()
+                        .ConfigureAwait(false)
+                        .GetAwaiter()
+                        .OnCompleted(r.Dispose);
+                    continue;
+                }
+
+                r.Dispose();
+            }
         }
-        finally
+        catch (Exception exception)
         {
             _semaphore.Release();
+            _logger.LogError(exception, "remove peer error");
         }
     }
 
@@ -182,10 +208,13 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
                 e.HasMetadataAttr, e.HasPeerExchange);
             this._pieceCount = 0;
             this._pieceSize = e.MetadataLength;
-            // 这里先请求第一片
-            peer.GetHashMetadata(0)
-                .GetAwaiter()
-                .OnCompleted(() => _logger.LogDebug("this first piece finished request"));
+            if (e.HasMetadataAttr)
+            {
+                // 这里先请求第一片
+                peer.GetHashMetadata(0)
+                    .GetAwaiter()
+                    .OnCompleted(() => _logger.LogDebug("this first piece finished request"));
+            }
         }
         finally
         {
@@ -208,31 +237,13 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         }
     }
 
-    public long MetadataPieceCount
-    {
-        get
-        {
-            if (!_hasMetadataReceived)
-            {
-                throw new InvalidOperationException("metadata has not been handshaked");
-            }
+    public long MetadataPieceCount => !_hasMetadataReceived
+        ? throw new InvalidOperationException("metadata has not been handshaked")
+        : _pieceCount;
 
-            return _pieceCount;
-        }
-    }
-
-    public long PieceSize
-    {
-        get
-        {
-            if (!_hasMetadataReceived)
-            {
-                throw new InvalidOperationException("metadata has not been handshaked");
-            }
-
-            return _pieceSize;
-        }
-    }
+    public long PieceSize => !_hasMetadataReceived
+        ? throw new InvalidOperationException("metadata has not been handshaked")
+        : _pieceSize;
 
     public bool HasMetadataReceived => _hasMetadataReceived;
 
@@ -271,18 +282,9 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         _logger.LogWarning("{btih} has no more peers", btih);
     }
 
-    public TorrentDirectoryInfo TorrentDirectoryInfo
-    {
-        get
-        {
-            if (_hasMetadataReceived)
-            {
-                return _directoryInfo;
-            }
-
-            throw new InvalidOperationException("metadata has not been received");
-        }
-    }
+    public TorrentDirectoryInfo TorrentDirectoryInfo => _hasMetadataReceived
+        ? _directoryInfo
+        : throw new InvalidOperationException("metadata has not been received");
 
     public void Dispose()
     {

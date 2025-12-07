@@ -74,7 +74,7 @@ public static class Program
 
     private static Action<HostBuilderContext, ContainerBuilder> LoadAssemblies(Logger logger)
     {
-        return (_, builder) =>
+        return (ctx, builder) =>
         {
             logger.Log(LogLevel.Debug, "begin register system services");
 
@@ -86,10 +86,32 @@ public static class Program
                 .As<IInterceptor>()
                 .Named("ExceptionInterceptor", typeof(IInterceptor))
                 .PropertiesAutowired();
-            var currentAssembly = typeof(Program).Assembly;
-            builder.RegisterAssemblyModules(currentAssembly);
-            var types = currentAssembly.GetTypes();
-            foreach (var type in types)
+            var environment = ctx.HostingEnvironment;
+            var contents = environment.ContentRootFileProvider.GetDirectoryContents("plugins");
+            List<Assembly> allAssembly = [typeof(Program).Assembly];
+            List<Type> totalTypes = [];
+            if (contents is { Exists: true })
+            {
+                foreach (var file in contents)
+                {
+                    if (file is not { Exists: true, IsDirectory: false, PhysicalPath: not null or "" }) continue;
+                    try
+                    {
+                        allAssembly.Add(Assembly.LoadFrom(file.PhysicalPath));
+                    }
+                    catch (Exception e)
+                    {
+                        logger.Log(LogLevel.Error, "Error loading assembly " + file.PhysicalPath);
+                        continue;
+                    }
+                }
+            }
+
+            builder.RegisterAssemblyModules(allAssembly.ToArray());
+            allAssembly.ForEach(p => totalTypes.AddRange(from pt in p.GetTypes()
+                where pt is { IsAbstract: false, IsInterface: false, IsPublic: true }
+                select pt));
+            foreach (var type in totalTypes)
             {
                 var attribute = type.GetCustomAttribute<ServiceAttribute>();
                 if (attribute == null)
