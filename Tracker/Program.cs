@@ -101,7 +101,7 @@ public static class Program
                     }
                     catch (Exception e)
                     {
-                        logger.Log(LogLevel.Error, "Error loading assembly " + file.PhysicalPath);
+                        logger.Log(LogLevel.Error, e, "Error loading assembly {physicalPath}", file.PhysicalPath);
                         continue;
                     }
                 }

@@ -10,11 +10,12 @@ using Umi.Dht.Client.Bittorrent.Sample;
 using Umi.Dht.Client.Protocol;
 using Umi.Dht.Client.TorrentIO;
 using Umi.Dht.Client.TorrentIO.StorageInfo;
-using Umi.Dht.Client.TorrentIO.Utils;
 
 internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
 {
     private static readonly RandomNumberGenerator Generator = RandomNumberGenerator.Create();
+
+    private volatile bool _disposed = false;
 
     private readonly ReadOnlyMemory<byte> _btih;
 
@@ -22,7 +23,13 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
 
     private readonly ITorrentStorage? _storage;
 
+    private readonly Lock _syncPeer = new();
+
     private readonly LinkedList<IBittorrentPeer> _bittorrentPeers = [];
+
+    private readonly LinkedList<IBittorrentPeer> _activePeers = [];
+
+    private readonly LinkedList<IBittorrentPeer> _deathPeer = [];
 
     private readonly IServiceProvider _provider;
 
@@ -42,8 +49,6 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
     public ReadOnlySpan<byte> Hash => _btih.Span;
     public BigInteger MaxDistance { get; private set; } = 0;
 
-    public IReadOnlyList<IPeer> Peers => _bittorrentPeers.ToImmutableList();
-
     private readonly Semaphore _semaphore = new(1, 1);
 
     public BitTorrentInfoHashPrivateTracker(byte[] btih,
@@ -59,8 +64,21 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         _storage = provider.GetService<ITorrentStorage>();
     }
 
+    public IReadOnlyList<IPeer> Peers
+    {
+        get
+        {
+            ThrowIfDisposed();
+            lock (_syncPeer)
+            {
+                return [.._bittorrentPeers, .._activePeers, .._deathPeer];
+            }
+        }
+    }
+
     public bool AnnounceNode(NodeInfo node)
     {
+        ThrowIfDisposed();
         try
         {
             _semaphore.WaitOne();
@@ -77,25 +95,84 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
 
     public void AddPeers(IEnumerable<IPeer> peers)
     {
-        _semaphore.WaitOne();
+        ThrowIfDisposed();
         try
         {
-            foreach (var peer in peers)
+            lock (_syncPeer)
             {
-                if (_bittorrentPeers.Any(p => p.Equals(peer))) continue;
-                var samplePeer = new SamplePeer(_provider, peer,
-                    _provider.GetRequiredService<ILogger<SamplePeer>>(), _btih.ToArray(), _peerId.ToArray());
-                samplePeer.PeerClose += this.OnSamplePeerOnPeerClose;
-                samplePeer.ExtensionHandshake += this.OnSamplePeerOnExtensionHandshake;
-                samplePeer.PeerExchange += this.OnSamplePeerOnPeerExchange;
-                samplePeer.MetadataPiece += this.SamplePeerOnMetadataPiece;
-                _bittorrentPeers.AddLast(samplePeer);
+                foreach (var peer in peers)
+                {
+                    if (_bittorrentPeers.Any(p => p.Equals(peer))
+                        || _activePeers.Any(p => p.Equals(peer))
+                        || _deathPeer.Any(p => p.Equals(peer))) continue;
+                    var samplePeer = new SamplePeer(_provider, peer,
+                        _provider.GetRequiredService<ILogger<SamplePeer>>(), _btih.ToArray(), _peerId.ToArray());
+                    samplePeer.PeerClose += this.OnSamplePeerOnPeerClose;
+                    samplePeer.ExtensionHandshake += this.OnSamplePeerOnExtensionHandshake;
+                    samplePeer.PeerExchange += this.OnSamplePeerOnPeerExchange;
+                    samplePeer.MetadataPiece += this.SamplePeerOnMetadataPiece;
+                    _bittorrentPeers.AddLast(samplePeer);
+                }
             }
         }
         catch (Exception e)
         {
-            _semaphore.Release();
             _logger.LogError(e, "add peer error");
+        }
+
+        this.TryBeginConnect()
+            .ConfigureAwait(false)
+            .GetAwaiter()
+            .OnCompleted(() => _logger.LogTrace("being started some peer"));
+    }
+
+    private async Task TryBeginConnect()
+    {
+        var p = new IBittorrentPeer?[5];
+        lock (_syncPeer)
+        {
+            if (_bittorrentPeers.Count > 0)
+            {
+                var v = 0;
+                var node = _bittorrentPeers.First;
+                while (node is not null && v < 5)
+                {
+                    p[v] = node.Value;
+                    v++;
+                    var current = node;
+                    node = node.Next;
+                    _bittorrentPeers.Remove(current);
+                    _activePeers.AddLast(current);
+                }
+            }
+        }
+
+        if (p.All(v => v is null)) return;
+        var enumerable = p.Where(v => v is not null)
+            .Select(v => v!.Connect())
+            .ToArray();
+        try
+        {
+            await Task.WhenAll(enumerable);
+        }
+        catch (AggregateException e)
+        {
+            for (var i = 0; i < enumerable.Length; i++)
+            {
+                if (enumerable[i].Status != TaskStatus.Faulted) continue;
+                lock (_syncPeer)
+                {
+                    var node = _activePeers.Find(p[i]!);
+                    if (node is null) continue;
+                    _activePeers.Remove(node);
+                    _deathPeer.AddLast(node);
+                }
+            }
+
+            var beginConnect = this.TryBeginConnect();
+            beginConnect.ConfigureAwait(false)
+                .GetAwaiter()
+                .OnCompleted(() => _logger.LogTrace("retry fill peer until nothing"));
         }
     }
 
@@ -170,32 +247,29 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
     private void OnSamplePeerOnPeerExchange(IBittorrentPeer sender, PeerExchangeEventArg e)
     {
         _logger.LogInformation("peer exchange received");
-        this.AddPeers(e.Add);
         _semaphore.WaitOne();
+        this.AddPeers(e.Add);
         try
         {
             var remove = e.Remove;
             foreach (var peer in remove)
             {
-                var r = _bittorrentPeers.FirstOrDefault(p => p.Equals(peer));
-                if (r is null) continue;
-                _bittorrentPeers.Remove(r);
-                if (r.IsConnected)
+                lock (_syncPeer)
                 {
-                    r.Disconnect()
-                        .ConfigureAwait(false)
-                        .GetAwaiter()
-                        .OnCompleted(r.Dispose);
-                    continue;
+                    var r = _bittorrentPeers.Find(sender);
+                    if (r is null) continue;
+                    _bittorrentPeers.Remove(r);
+                    _deathPeer.AddLast(r);
                 }
-
-                r.Dispose();
             }
         }
         catch (Exception exception)
         {
-            _semaphore.Release();
             _logger.LogError(exception, "remove peer error");
+        }
+        finally
+        {
+            _semaphore.Release();
         }
     }
 
@@ -222,18 +296,16 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         }
     }
 
-    private void OnSamplePeerOnPeerClose(IPeer sender, PeerCloseEventArg e)
+    private void OnSamplePeerOnPeerClose(IBittorrentPeer sender, PeerCloseEventArg e)
     {
-        try
+        _logger.LogDebug("peer: {address}:{port} closed", sender.Address, sender.Port);
+        lock (_syncPeer)
         {
-            _semaphore.WaitOne();
-            _logger.LogDebug("peer: {address}:{port} closed", sender.Address, sender.Port);
-            var node = _bittorrentPeers.Find((IBittorrentPeer)sender);
-            if (node is not null) _bittorrentPeers.Remove(node);
-        }
-        finally
-        {
-            _semaphore.Release();
+            // find 
+            var node = _activePeers.Find(sender);
+            if (node is null) return;
+            _activePeers.Remove(node);
+            _deathPeer.AddLast(node);
         }
     }
 
@@ -247,66 +319,71 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
 
     public bool HasMetadataReceived => _hasMetadataReceived;
 
-    public async ValueTask BeginGetMetadata()
+    public ValueTask BeginGetMetadata()
     {
-        if (_bittorrentPeers.Count == 0)
-        {
-            return;
-        }
-
-        var btih = Convert.ToHexString(_btih.Span);
-        var node = _bittorrentPeers.First;
-        while (node is not null)
-        {
-            try
-            {
-                await node.Value.Connect();
-                return;
-            }
-            catch (Exception e)
-            {
-                var bittorrentPeer = node.Value;
-                lock (_bittorrentPeers)
-                {
-                    var current = node;
-                    _bittorrentPeers.Remove(current);
-                    _logger.LogWarning("{btih} peer: {addr}:{port} connected failure, trying next",
-                        btih, current.Value.Address, current.Value.Port);
-                }
-
-                bittorrentPeer.Dispose();
-                node = node.Next;
-            }
-        }
-
-        _logger.LogWarning("{btih} has no more peers", btih);
+        ThrowIfDisposed();
+        // 废弃方法
+        return ValueTask.CompletedTask;
     }
 
     public TorrentDirectoryInfo TorrentDirectoryInfo => _hasMetadataReceived
         ? _info?.Info ?? throw new InvalidOperationException("info has not been received")
         : throw new InvalidOperationException("metadata has not been received");
 
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+    }
+
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
         _semaphore.Dispose();
         if (_bittorrentPeers.Count > 0)
         {
             var first = _bittorrentPeers.First;
             while (first is not null)
             {
-                try
-                {
-                    first.Value.Disconnect();
-                    first.Value.Dispose();
-                }
-                catch (Exception e)
-                {
-                    _logger.LogError(e, "Dispose Error, {ip}:{port}", first.Value.Address, first.Value.Port);
-                }
-
                 var current = first;
+                current.Value.Dispose();
                 first = first.Next;
                 _bittorrentPeers.Remove(current);
+            }
+        }
+
+        if (_activePeers.Count > 0)
+        {
+            var first = _activePeers.First;
+            while (first is not null)
+            {
+                var current = first;
+                if (current.Value.IsConnected)
+                {
+                    current.Value.Disconnect()
+                        .ConfigureAwait(false)
+                        .GetAwaiter()
+                        .OnCompleted(current.Value.Dispose);
+                }
+                else
+                {
+                    current.Value.Dispose();
+                }
+
+                first = first.Next;
+                _activePeers.Remove(current);
+            }
+        }
+
+        if (_deathPeer.Count > 0)
+        {
+            var first = _deathPeer.First;
+            while (first is not null)
+            {
+                var current = first;
+                current.Value.Dispose();
+                first = first.Next;
+                _deathPeer.Remove(current);
             }
         }
     }

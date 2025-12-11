@@ -155,7 +155,6 @@ public sealed class SamplePeer : IBittorrentPeer
                 .OnCompleted(() => _logger.LogTrace("timer keepalive finished")),
             null, TimeSpan.FromMinutes(2),
             TimeSpan.FromMinutes(2));
-        // 超时等待
     }
 
     public async Task Disconnect()
@@ -525,6 +524,7 @@ public sealed class SamplePeer : IBittorrentPeer
                             await this.OnPeerExchangeMsg(message.Memory);
                             break;
                         default:
+                            // other package, ignored
                             _logger.LogWarning("unknown extended type {type} ignored", extendedType);
                             break;
                     }
@@ -545,7 +545,7 @@ public sealed class SamplePeer : IBittorrentPeer
     {
         if (!_hasPeerHandshake)
         {
-            _logger.LogWarning("peer has no reponse for handshake");
+            _logger.LogWarning("peer has no response for handshake");
             await this.Disconnect();
             return;
         }
@@ -553,7 +553,7 @@ public sealed class SamplePeer : IBittorrentPeer
         if (_aliveReceived + TimeSpan.FromMinutes(10) < DateTimeOffset.UtcNow)
         {
             // not alive peer ,disconnect
-            _logger.LogWarning("peer not alive");
+            _logger.LogWarning("peer not alive, pex {p}", _peerHasPex);
             await this.Disconnect();
             return;
         }

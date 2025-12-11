@@ -49,4 +49,4 @@ public delegate void PeerExchangeEventHandler(IBittorrentPeer sender, PeerExchan
 
 public delegate void MetadataPieceEventHandler(IBittorrentPeer sender, MetadataPieceEventArg e);
 
-public delegate void PeerCloseEventHandler(IPeer sender, PeerCloseEventArg e);
+public delegate void PeerCloseEventHandler(IBittorrentPeer sender, PeerCloseEventArg e);
