@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Umi.Dht.Client.Attributes;
@@ -12,7 +13,7 @@ public sealed class FileSystemTorrentStorage(
     ILogger<FileSystemTorrentStorage> logger,
     IHostEnvironment environment) : ITorrentStorage
 {
-    public TorrentFileInfo Save(ReadOnlySpan<byte> data)
+    public TorrentFileInfo Save(ReadOnlyMemory<byte> data)
     {
         try
         {
@@ -20,10 +21,12 @@ public sealed class FileSystemTorrentStorage(
             var root = environment.ContentRootPath;
             var sub = Path.Combine(root, DateTimeOffset.UtcNow.ToString("yyyyMMdd"));
             if (!Directory.Exists(sub)) Directory.CreateDirectory(sub);
-            var fileName = Convert.ToHexString(data);
+            using var sha1 = SHA1.Create();
+            var hash = sha1.ComputeHash(data.ToArray());
+            var fileName = Convert.ToHexString(hash);
             var filePath = Path.Combine(sub, $"{fileName}.torrent");
             using var fs = File.Create(filePath);
-            var enumerator = data.GetEnumerator();
+            var enumerator = data.Span.GetEnumerator();
             enumerator.MoveNext();
             Dictionary<string, object> torrent = new()
             {
@@ -37,7 +40,7 @@ public sealed class FileSystemTorrentStorage(
             return new TorrentFileInfo
             {
                 Announce = "",
-                Info = TorrentFileDecode.DecodeInfo(data)
+                Info = TorrentFileDecode.DecodeInfo(data.Span)
             };
         }
         catch (Exception e)

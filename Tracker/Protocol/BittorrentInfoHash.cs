@@ -35,7 +35,7 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
 
     private readonly ILogger<BitTorrentInfoHashPrivateTracker> _logger;
 
-    private bool _hasMetadataReceived = false;
+    private volatile bool _hasMetadataReceived = false;
 
     private TorrentFileInfo? _info;
 
@@ -120,6 +120,7 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
             _logger.LogError(e, "add peer error");
         }
 
+        if (_hasMetadataReceived) return;
         this.TryBeginConnect()
             .ConfigureAwait(false)
             .GetAwaiter()
@@ -128,6 +129,7 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
 
     private async Task TryBeginConnect()
     {
+        if (_hasMetadataReceived) return;
         var p = new IBittorrentPeer?[5];
         lock (_syncPeer)
         {
@@ -157,6 +159,7 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         }
         catch (AggregateException e)
         {
+            _logger.LogError(e, "task error");
             for (var i = 0; i < enumerable.Length; i++)
             {
                 if (enumerable[i].Status != TaskStatus.Faulted) continue;
@@ -224,8 +227,8 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         var sequence =
             MetadataSequence.CreateSequenceFromList(_metadataBuffers.Select(p => p.Buffer));
         var buffer = new byte[sequence.Length];
-        Span<byte> merged = buffer;
-        sequence.CopyTo(merged);
+        Memory<byte> merged = buffer;
+        sequence.CopyTo(merged.Span);
         using var sha1 = SHA1.Create();
         ReadOnlySpan<byte> computeHash = sha1.ComputeHash(buffer);
         if (!computeHash.SequenceEqual(_btih.Span))
@@ -238,11 +241,42 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         _info = _storage?.Save(merged);
 
         _hasMetadataReceived = true;
+        _ = this.CloseAllPeerConnection()
+            .ContinueWith(t => _logger.LogInformation("{s} finished", t.Status));
         if (_logger.IsEnabled(LogLevel.Information))
         {
             _logger.LogInformation("info dic is {dic}", _info);
         }
     }
+
+    private async Task CloseAllPeerConnection()
+    {
+        var tasks = new List<Task>();
+        lock (_syncPeer)
+        {
+            if (_activePeers.Count > 0)
+            {
+                var node = _activePeers.First;
+                while (node is not null)
+                {
+                    try
+                    {
+                        tasks.Add(node.Value.Disconnect());
+                    }
+                    catch (Exception e)
+                    {
+                        _logger.LogWarning(e, "close error");
+                        continue;
+                    }
+
+                    node = node.Next;
+                }
+            }
+        }
+
+        await Task.WhenAll(tasks);
+    }
+
 
     private void OnSamplePeerOnPeerExchange(IBittorrentPeer sender, PeerExchangeEventArg e)
     {

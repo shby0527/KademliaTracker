@@ -9,7 +9,7 @@ public interface ITorrentStorage
     /// </summary>
     /// <param name="data">info dictionary</param>
     /// <returns></returns>
-    TorrentFileInfo Save(ReadOnlySpan<byte> data);
+    TorrentFileInfo Save(ReadOnlyMemory<byte> data);
 
     IEnumerable<TorrentFileInfo> Search(string file);
 
