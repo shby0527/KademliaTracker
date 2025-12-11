@@ -20,38 +20,46 @@ public sealed class FileSystemMagnetLinkStorage(
 
     public bool StoreMagnet(MagnetInfo magnet)
     {
-        // store sub dictionary
-        var path = environment.ContentRootPath;
-        var s = Path.Combine(path, "magnet");
-        var di = new DirectoryInfo(s);
-        if (!di.Exists)
+        try
         {
-            di.Create();
-        }
-
-        var s1 = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
-        FileInfo m = new(Path.Combine(s, $"{s1}.txt"));
-        using var sw = m.Exists ? m.AppendText() : m.CreateText();
-        StringBuilder sb = new($"magnet:?xt=urn:btih:{Convert.ToHexString(magnet.Hash.Span)}");
-        if (!string.IsNullOrEmpty(magnet.DisplayName))
-        {
-            sb.Append($"&dn={magnet.DisplayName}");
-        }
-
-        if (magnet.ExactLength is not null)
-        {
-            sb.Append($"xl={magnet.ExactLength}");
-        }
-
-        if (magnet.Trackers is not null)
-        {
-            foreach (var tracker in magnet.Trackers)
+            // store sub dictionary
+            var path = environment.ContentRootPath;
+            var s = Path.Combine(path, "magnet");
+            var di = new DirectoryInfo(s);
+            if (!di.Exists)
             {
-                sb.AppendJoin('&', $"tr={tracker}");
+                di.Create();
             }
-        }
 
-        sw.WriteLine(sb.ToString());
-        return true;
+            var s1 = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
+            FileInfo m = new(Path.Combine(s, $"{s1}.txt"));
+            using var sw = m.Exists ? m.AppendText() : m.CreateText();
+            StringBuilder sb = new($"magnet:?xt=urn:btih:{Convert.ToHexString(magnet.Hash.Span)}");
+            if (!string.IsNullOrEmpty(magnet.DisplayName))
+            {
+                sb.Append($"&dn={magnet.DisplayName}");
+            }
+
+            if (magnet.ExactLength is not null)
+            {
+                sb.Append($"xl={magnet.ExactLength}");
+            }
+
+            if (magnet.Trackers is not null)
+            {
+                foreach (var tracker in magnet.Trackers)
+                {
+                    sb.AppendJoin('&', $"tr={tracker}");
+                }
+            }
+
+            sw.WriteLine(sb.ToString());
+            return true;
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, "storage error");
+            return false;
+        }
     }
 }

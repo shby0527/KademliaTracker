@@ -14,22 +14,37 @@ public sealed class FileSystemTorrentStorage(
 {
     public TorrentFileInfo Save(ReadOnlySpan<byte> data)
     {
-        logger.LogTrace("begin save info to");
-        var root = environment.ContentRootPath;
-        var sub = Path.Combine(root, DateTimeOffset.UtcNow.ToString("yyyyMMdd"));
-        if (!Directory.Exists(sub)) Directory.CreateDirectory(sub);
-        var fileName = Convert.ToHexString(data);
-        var filePath = Path.Combine(sub, fileName);
-        using var fs = File.Create(filePath);
-        fs.Write(data);
-        fs.Flush(true);
-        fs.Close();
-        logger.LogTrace("end save info to");
-        return new TorrentFileInfo
+        try
         {
-            Announce = "",
-            Info = TorrentFileDecode.DecodeInfo(data)
-        };
+            logger.LogTrace("begin save info to");
+            var root = environment.ContentRootPath;
+            var sub = Path.Combine(root, DateTimeOffset.UtcNow.ToString("yyyyMMdd"));
+            if (!Directory.Exists(sub)) Directory.CreateDirectory(sub);
+            var fileName = Convert.ToHexString(data);
+            var filePath = Path.Combine(sub, $"{fileName}.torrent");
+            using var fs = File.Create(filePath);
+            var enumerator = data.GetEnumerator();
+            enumerator.MoveNext();
+            Dictionary<string, object> torrent = new()
+            {
+                { "announce", "dht" },
+                { "info", BEncoder.BDecodeToMap(ref enumerator) }
+            };
+            fs.Write(BEncoder.BEncode(torrent));
+            fs.Flush(true);
+            fs.Close();
+            logger.LogTrace("end save info to");
+            return new TorrentFileInfo
+            {
+                Announce = "",
+                Info = TorrentFileDecode.DecodeInfo(data)
+            };
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, "save error");
+            return default;
+        }
     }
 
     public IEnumerable<TorrentFileInfo> Search(string file)
