@@ -2,9 +2,9 @@ using System.Text;
 
 namespace Umi.Dht.Client.TorrentIO.StorageInfo;
 
-public readonly ref struct MagnetInfo
+public readonly struct MagnetInfo
 {
-    public required ReadOnlySpan<byte> Hash { get; init; }
+    public required ReadOnlyMemory<byte> Hash { get; init; }
 
     public string? DisplayName { get; init; }
 

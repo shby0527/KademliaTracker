@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Umi.Dht.Client.Attributes;
 using Umi.Dht.Client.TorrentIO;
 using Umi.Dht.Client.TorrentIO.StorageInfo;
+using Umi.Dht.Client.TorrentIO.Utils;
 
 namespace Umi.Dht.Client.Plugins.FileSystemStorage;
 
@@ -13,16 +14,31 @@ public sealed class FileSystemTorrentStorage(
 {
     public TorrentFileInfo Save(ReadOnlySpan<byte> data)
     {
-        throw new NotImplementedException();
+        logger.LogTrace("begin save info to");
+        var root = environment.ContentRootPath;
+        var sub = Path.Combine(root, DateTimeOffset.UtcNow.ToString("yyyyMMdd"));
+        if (!Directory.Exists(sub)) Directory.CreateDirectory(sub);
+        var fileName = Convert.ToHexString(data);
+        var filePath = Path.Combine(sub, fileName);
+        using var fs = File.Create(filePath);
+        fs.Write(data);
+        fs.Flush(true);
+        fs.Close();
+        logger.LogTrace("end save info to");
+        return new TorrentFileInfo
+        {
+            Announce = "",
+            Info = TorrentFileDecode.DecodeInfo(data)
+        };
     }
 
     public IEnumerable<TorrentFileInfo> Search(string file)
     {
-        throw new NotImplementedException();
+        return [];
     }
 
     public TorrentFileInfo? Exists(ReadOnlySpan<byte> infohash)
     {
-        throw new NotImplementedException();
+        return null;
     }
 }

@@ -4,6 +4,11 @@ namespace Umi.Dht.Client.TorrentIO;
 
 public interface ITorrentStorage
 {
+    /// <summary>
+    /// save info dictionary 
+    /// </summary>
+    /// <param name="data">info dictionary</param>
+    /// <returns></returns>
     TorrentFileInfo Save(ReadOnlySpan<byte> data);
 
     IEnumerable<TorrentFileInfo> Search(string file);

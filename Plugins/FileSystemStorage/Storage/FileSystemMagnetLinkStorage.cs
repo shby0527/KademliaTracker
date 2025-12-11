@@ -12,13 +12,10 @@ public sealed class FileSystemMagnetLinkStorage(
     ILogger<FileSystemMagnetLinkStorage> logger,
     IHostEnvironment environment) : IMagnetLinkStorage
 {
-    public MagnetInfo FoundMagnet(ReadOnlySpan<byte> hash)
+    public MagnetInfo? FoundMagnet(ReadOnlySpan<byte> hash)
     {
         // search magnetInfo not implement , direct return
-        return new MagnetInfo
-        {
-            Hash = hash
-        };
+        return null;
     }
 
     public bool StoreMagnet(MagnetInfo magnet)
@@ -35,7 +32,7 @@ public sealed class FileSystemMagnetLinkStorage(
         var s1 = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
         FileInfo m = new(Path.Combine(s, $"{s1}.txt"));
         using var sw = m.Exists ? m.AppendText() : m.CreateText();
-        StringBuilder sb = new($"magnet:?xt=urn:btih:{Convert.ToHexString(magnet.Hash)}");
+        StringBuilder sb = new($"magnet:?xt=urn:btih:{Convert.ToHexString(magnet.Hash.Span)}");
         if (!string.IsNullOrEmpty(magnet.DisplayName))
         {
             sb.Append($"&dn={magnet.DisplayName}");

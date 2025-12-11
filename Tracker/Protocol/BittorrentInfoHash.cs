@@ -30,7 +30,7 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
 
     private bool _hasMetadataReceived = false;
 
-    private TorrentDirectoryInfo _directoryInfo;
+    private TorrentFileInfo? _info;
 
     private readonly LinkedList<(long Piece, ReadOnlyMemory<byte> Buffer)> _metadataBuffers = [];
 
@@ -158,12 +158,12 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
             return;
         }
 
-        _directoryInfo = TorrentFileDecode.DecodeInfo(merged);
-        _storage?.Save(merged);
+        _info = _storage?.Save(merged);
+
         _hasMetadataReceived = true;
         if (_logger.IsEnabled(LogLevel.Information))
         {
-            _logger.LogInformation("info dic is {dic}", _directoryInfo);
+            _logger.LogInformation("info dic is {dic}", _info);
         }
     }
 
@@ -283,7 +283,7 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
     }
 
     public TorrentDirectoryInfo TorrentDirectoryInfo => _hasMetadataReceived
-        ? _directoryInfo
+        ? _info?.Info ?? throw new InvalidOperationException("info has not been received")
         : throw new InvalidOperationException("metadata has not been received");
 
     public void Dispose()

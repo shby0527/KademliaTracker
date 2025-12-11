@@ -207,10 +207,10 @@ public class KademliaNode
                 var item = buffer[i..(i + 26)];
                 // node id is
                 var itemId = item[..20];
-                var itemIP = new IPAddress(item[20..24]);
+                var itemIp = new IPAddress(item[20..24]);
                 var port = BinaryPrimitives.ReadUInt16BigEndian(item[24..26]);
                 _logger.LogTrace("received node ID:{id}, IP: {ip}, port: {port} ",
-                    BitConverter.ToString(itemId.ToArray()).Replace("-", ""), itemIP, port);
+                    BitConverter.ToString(itemId.ToArray()).Replace("-", ""), itemIp, port);
                 if (itemId.SequenceEqual(CLIENT_NODE_ID.Span))
                 {
                     _logger.LogTrace("found my self, stoped");
@@ -222,12 +222,12 @@ public class KademliaNode
                     _logger.LogTrace("node not exists in this");
                     // send ping
                     var ping = KademliaProtocols.Ping(CLIENT_NODE_ID.Span);
-                    SendPackage(new IPEndPoint(itemIP, port), ping);
+                    SendPackage(new IPEndPoint(itemIp, port), ping);
                     n = new NodeInfo
                     {
                         NodeId = itemId.ToArray(),
                         Distance = KRouter.ComputeDistances(itemId, CLIENT_NODE_ID.Span),
-                        NodeAddress = itemIP,
+                        NodeAddress = itemIp,
                         NodePort = port
                     };
                     var prefixLength = _kRouter.AddNode(n);
@@ -327,11 +327,11 @@ public class KademliaNode
             SendGetPeers(hash);
         }
 
-        var magnetLink = $"magnet:?xt=urn:btih:{BitConverter.ToString(hash.ToArray()).Replace("-", "")}";
+        var magnetLink = $"magnet:?xt=urn:btih:{Convert.ToHexString(hash.ToArray())}";
         _logger.LogTrace("found magnet link {link}", magnetLink);
         var magnetInfo = new MagnetInfo
         {
-            Hash = hash
+            Hash = hash.ToArray()
         };
         _magnetLinkStorage?.StoreMagnet(magnetInfo);
     }
@@ -375,11 +375,11 @@ public class KademliaNode
 
         infoHash.AnnounceNode(node);
 
-        var magnetLink = $"magnet:?xt=urn:btih:{BitConverter.ToString(hash.ToArray()).Replace("-", "")}";
+        var magnetLink = $"magnet:?xt=urn:btih:{Convert.ToHexString(hash.ToArray())}";
         _logger.LogTrace("found magnet link {link}", magnetLink);
         var magnetInfo = new MagnetInfo
         {
-            Hash = hash
+            Hash = hash.ToArray()
         };
         _magnetLinkStorage?.StoreMagnet(magnetInfo);
 
