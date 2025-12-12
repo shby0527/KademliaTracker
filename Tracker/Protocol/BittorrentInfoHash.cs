@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Collections.Immutable;
 using System.Numerics;
 using System.Security.Cryptography;
 using Microsoft.Extensions.DependencyInjection;
@@ -133,11 +132,11 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         var p = new IBittorrentPeer?[5];
         lock (_syncPeer)
         {
-            if (_bittorrentPeers.Count > 0)
+            if (_bittorrentPeers.Count > 0 && _activePeers.Count < 5)
             {
                 var v = 0;
                 var node = _bittorrentPeers.First;
-                while (node is not null && v < 5)
+                while (node is not null && v < 5 - _activePeers.Count)
                 {
                     p[v] = node.Value;
                     v++;
@@ -290,7 +289,7 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
             {
                 lock (_syncPeer)
                 {
-                    var r = _bittorrentPeers.Find(sender);
+                    var r = _bittorrentPeers.FirstOrDefault(p => p.Equals(peer));
                     if (r is null) continue;
                     _bittorrentPeers.Remove(r);
                     _deathPeer.AddLast(r);
@@ -374,50 +373,53 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         if (_disposed) return;
         _disposed = true;
         _semaphore.Dispose();
-        if (_bittorrentPeers.Count > 0)
+        lock (_syncPeer)
         {
-            var first = _bittorrentPeers.First;
-            while (first is not null)
+            if (_bittorrentPeers.Count > 0)
             {
-                var current = first;
-                current.Value.Dispose();
-                first = first.Next;
-                _bittorrentPeers.Remove(current);
-            }
-        }
-
-        if (_activePeers.Count > 0)
-        {
-            var first = _activePeers.First;
-            while (first is not null)
-            {
-                var current = first;
-                if (current.Value.IsConnected)
+                var first = _bittorrentPeers.First;
+                while (first is not null)
                 {
-                    current.Value.Disconnect()
-                        .ConfigureAwait(false)
-                        .GetAwaiter()
-                        .OnCompleted(current.Value.Dispose);
-                }
-                else
-                {
+                    var current = first;
                     current.Value.Dispose();
+                    first = first.Next;
+                    _bittorrentPeers.Remove(current);
                 }
-
-                first = first.Next;
-                _activePeers.Remove(current);
             }
-        }
 
-        if (_deathPeer.Count > 0)
-        {
-            var first = _deathPeer.First;
-            while (first is not null)
+            if (_activePeers.Count > 0)
             {
-                var current = first;
-                current.Value.Dispose();
-                first = first.Next;
-                _deathPeer.Remove(current);
+                var first = _activePeers.First;
+                while (first is not null)
+                {
+                    var current = first;
+                    if (current.Value.IsConnected)
+                    {
+                        current.Value.Disconnect()
+                            .ConfigureAwait(false)
+                            .GetAwaiter()
+                            .OnCompleted(current.Value.Dispose);
+                    }
+                    else
+                    {
+                        current.Value.Dispose();
+                    }
+
+                    first = first.Next;
+                    _activePeers.Remove(current);
+                }
+            }
+
+            if (_deathPeer.Count > 0)
+            {
+                var first = _deathPeer.First;
+                while (first is not null)
+                {
+                    var current = first;
+                    current.Value.Dispose();
+                    first = first.Next;
+                    _deathPeer.Remove(current);
+                }
             }
         }
     }

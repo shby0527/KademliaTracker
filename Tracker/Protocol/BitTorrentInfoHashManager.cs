@@ -3,11 +3,14 @@ using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Umi.Dht.Client.Attributes;
 using Umi.Dht.Client.Bittorrent;
 
 namespace Umi.Dht.Client.Protocol;
 
-public sealed class BitTorrentInfoHashManager(IServiceProvider provider) : IEnumerable<IBitTorrentInfoHash>, IDisposable
+[Service(ServiceScope.Singleton)]
+// ReSharper disable once ClassNeverInstantiated.Global
+public sealed class BitTorrentInfoHashManager(IServiceProvider provider) : IBittorrentInfoHashManager
 {
     private readonly ILogger<BitTorrentInfoHashManager> _logger =
         provider.GetRequiredService<ILogger<BitTorrentInfoHashManager>>();
@@ -18,7 +21,7 @@ public sealed class BitTorrentInfoHashManager(IServiceProvider provider) : IEnum
 
     public int Count => _bitTorrentInfo.Count;
 
-    public IBitTorrentInfoHash AddBitTorrentInfoHash(ReadOnlySpan<byte> infoHash)
+    public IBitTorrentInfoHash AddBitTorrentInfoHash(ReadOnlyMemory<byte> infoHash)
     {
         var btih = Convert.ToHexString(infoHash.ToArray());
         lock (_bitTorrentInfo)

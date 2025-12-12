@@ -38,7 +38,7 @@ public class KademliaNode
 
     private readonly ConcurrentDictionary<BigInteger, KRpcPackage> _packages = new();
 
-    private readonly BitTorrentInfoHashManager _torrentInfoHashManager;
+    private readonly IBittorrentInfoHashManager _torrentInfoHashManager;
 
     private readonly ImmutableDictionary<string, Action<KRpcPackage, KRpcPackage, EndPoint>> _eventMap;
 
@@ -56,7 +56,7 @@ public class KademliaNode
         _kRouter = new KRouter(nodeId, provider);
         _environment = provider.GetRequiredService<IHostEnvironment>();
         _magnetLinkStorage = provider.GetService<IMagnetLinkStorage>();
-        _torrentInfoHashManager = new BitTorrentInfoHashManager(provider);
+        _torrentInfoHashManager = provider.GetRequiredService<IBittorrentInfoHashManager>();
         _kRouter.BuckerRefreshing += this.OnBucketRefresh;
         _kRouter.UnhealthNodeChecker += this.OnNodeCheckPing;
         _eventMap = new Dictionary<string, Action<KRpcPackage, KRpcPackage, EndPoint>>()
@@ -235,7 +235,7 @@ public class KademliaNode
                 }
 
                 _logger.LogTrace("add info hash");
-                ReadOnlySpan<byte> btih = (byte[])request.Query!.Value.Arguments["info_hash"];
+                ReadOnlyMemory<byte> btih = (byte[])request.Query!.Value.Arguments["info_hash"];
                 var torrentInfoHash = _torrentInfoHashManager.AddBitTorrentInfoHash(btih);
                 _logger.LogTrace("current node dist {dist}", torrentInfoHash.MaxDistance);
                 if (!torrentInfoHash.AnnounceNode(n)) continue;
@@ -248,7 +248,7 @@ public class KademliaNode
         if (!dictionary.TryGetValue("values", out var obj) || obj is not ICollection<object> peers) return;
         {
             _logger.LogTrace("found peers, count {c}", peers.Count);
-            ReadOnlySpan<byte> btih = (byte[])request.Query!.Value.Arguments["info_hash"];
+            ReadOnlyMemory<byte> btih = (byte[])request.Query!.Value.Arguments["info_hash"];
             var torrentInfoHash = _torrentInfoHashManager.AddBitTorrentInfoHash(btih);
             _logger.LogTrace("current node dist {dist}", torrentInfoHash.MaxDistance);
             List<IPeer> p = [];
@@ -305,7 +305,7 @@ public class KademliaNode
             nodes.AddRange(port.ToByteArray(true, true));
         }
 
-        var btih = BitConverter.ToString(hash.ToArray()).Replace("-", "");
+        var btih = Convert.ToHexString(hash.ToArray());
         ICollection<byte[]> peers = [];
         if (_torrentInfoHashManager.TryGetBitTorrentInfoHash(btih, out var infoH))
         {
@@ -359,7 +359,7 @@ public class KademliaNode
             _kRouter.AddNode(node);
         }
 
-        ReadOnlySpan<byte> hash = (byte[])arguments["info_hash"];
+        ReadOnlyMemory<byte> hash = (byte[])arguments["info_hash"];
         var infoHash = _torrentInfoHashManager.AddBitTorrentInfoHash(hash);
         if (arguments.TryGetValue("implied_port", out var iPort) && iPort is long p && p != 0)
         {
@@ -479,10 +479,10 @@ public class KademliaNode
             var item = nodes[i..(i + 26)];
             // node id is
             var itemId = item[..20];
-            var itemIP = new IPAddress(item[20..24]);
+            var itemIp = new IPAddress(item[20..24]);
             var port = BinaryPrimitives.ReadUInt16BigEndian(item[24..26]);
             _logger.LogTrace("received node ID:{id}, IP: {ip}, port: {port} ",
-                BitConverter.ToString(itemId.ToArray()).Replace("-", ""), itemIP, port);
+                Convert.ToHexString(itemId.ToArray()), itemIp, port);
             if (itemId.SequenceEqual(CLIENT_NODE_ID.Span))
             {
                 _logger.LogTrace("found my self, stoped");
@@ -499,14 +499,14 @@ public class KademliaNode
             {
                 NodeId = itemId.ToArray(),
                 Distance = KRouter.ComputeDistances(itemId, CLIENT_NODE_ID.Span),
-                NodeAddress = itemIP,
+                NodeAddress = itemIp,
                 NodePort = port
             };
             _kRouter.AddNode(node);
             _logger.LogInformation("now node count: {c}", _kRouter.NodeCount);
             if (_kRouter.NodeCount < 1350 && node.Distance > BigInteger.Zero)
             {
-                SendPackage(new IPEndPoint(itemIP, port),
+                SendPackage(new IPEndPoint(itemIp, port),
                     KademliaProtocols.FindNode(CLIENT_NODE_ID.Span, CLIENT_NODE_ID.Span));
             }
         }
