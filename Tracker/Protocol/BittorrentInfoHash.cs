@@ -61,6 +61,8 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         Generator.GetBytes(peerId);
         _peerId = peerId.ToArray();
         _storage = provider.GetService<ITorrentStorage>();
+        _info = _storage?.Exists(btih);
+        _hasMetadataReceived = _info is not null;
     }
 
     public IReadOnlyList<IPeer> Peers

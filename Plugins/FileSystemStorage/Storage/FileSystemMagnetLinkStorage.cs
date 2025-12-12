@@ -12,7 +12,7 @@ public sealed class FileSystemMagnetLinkStorage(
     ILogger<FileSystemMagnetLinkStorage> logger,
     IHostEnvironment environment) : IMagnetLinkStorage
 {
-    public MagnetInfo? FoundMagnet(ReadOnlySpan<byte> hash)
+    public MagnetInfo? FoundMagnet(ReadOnlyMemory<byte> hash)
     {
         // search magnetInfo not implement , direct return
         return null;

@@ -55,7 +55,7 @@ public sealed class FileSystemTorrentStorage(
         return [];
     }
 
-    public TorrentFileInfo? Exists(ReadOnlySpan<byte> infohash)
+    public TorrentFileInfo? Exists(ReadOnlyMemory<byte> infohash)
     {
         return null;
     }

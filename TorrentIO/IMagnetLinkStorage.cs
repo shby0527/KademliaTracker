@@ -10,7 +10,7 @@ public interface IMagnetLinkStorage
     /// <param name="hash">hash</param>
     /// <returns>返回找到的hash</returns>
     /// <exception cref="KeyNotFoundException">链接找不到</exception>
-    MagnetInfo? FoundMagnet(ReadOnlySpan<byte> hash);
+    MagnetInfo? FoundMagnet(ReadOnlyMemory<byte> hash);
 
     /// <summary>
     /// 存储一个链接
@@ -26,5 +26,5 @@ public interface IMagnetLinkStorage
     /// <returns>返回找到的hash</returns>
     /// <exception cref="KeyNotFoundException">链接找不到</exception>
     /// <see cref="FoundMagnet"/>
-    MagnetInfo? this[ReadOnlySpan<byte> hash] => FoundMagnet(hash);
+    MagnetInfo? this[ReadOnlyMemory<byte> hash] => FoundMagnet(hash);
 }

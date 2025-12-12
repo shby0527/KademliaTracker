@@ -333,7 +333,8 @@ public class KademliaNode
         {
             Hash = hash.ToArray()
         };
-        _magnetLinkStorage?.StoreMagnet(magnetInfo);
+        if (_magnetLinkStorage?.FoundMagnet(magnetInfo.Hash) is null)
+            _magnetLinkStorage?.StoreMagnet(magnetInfo);
     }
 
     private void OnAnnouncePeerRequest(
@@ -381,7 +382,8 @@ public class KademliaNode
         {
             Hash = hash.ToArray()
         };
-        _magnetLinkStorage?.StoreMagnet(magnetInfo);
+        if (_magnetLinkStorage?.FoundMagnet(magnetInfo.Hash) is null)
+            _magnetLinkStorage?.StoreMagnet(magnetInfo);
 
         _logger.LogTrace("announce response, transaction {tr}", request.FormattedTransaction);
         SendPackage(ip, KademliaProtocols.PingResponse(CLIENT_NODE_ID.Span, request.TransactionId));
