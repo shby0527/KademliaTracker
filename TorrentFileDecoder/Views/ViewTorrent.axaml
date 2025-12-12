@@ -1,0 +1,39 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:TorrentFileDecoder.ViewModels"
+        mc:Ignorable="d"
+        d:DesignWidth="900"
+        d:DesignHeight="500"
+        CanMaximize="False"
+        CanResize="False"
+        Width="900"
+        Height="500"
+        x:Class="TorrentFileDecoder.Views.ViewTorrent"
+        x:DataType="vm:ViewTorrentViewModel"
+        Title="ViewTorrent">
+
+    <Design.DataContext>
+        <vm:ViewTorrentViewModel />
+    </Design.DataContext>
+
+    <Grid Margin="5" RowDefinitions="Auto Auto" ColumnDefinitions="40,6*,1*">
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="路径" TextAlignment="Center" />
+        <TextBox Grid.Row="0" Grid.Column="1"
+                 Text="{Binding TorrentPath, Mode=TwoWay}" />
+        <Button Grid.Row="0" Grid.Column="2" Height="35"
+                Content="选择文件夹"
+                HorizontalAlignment="Center"
+                Command="{Binding FileSelectorCommand}" />
+        <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="10" Height="400">
+            <ListBox ItemsSource="{Binding FilesList}" SelectionMode="Single"
+                     SelectedItem="{Binding SelectedItem, Mode=OneWayToSource}" />
+            <TextBox IsReadOnly="True" AcceptsReturn="True" LineHeight="30" xml:space="preserve"
+                     Text="{Binding TorrentContent}" 
+                     TextWrapping="WrapWithOverflow"
+                     MaxWidth="440"/>
+        </StackPanel>
+    </Grid>
+
+</Window>
