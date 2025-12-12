@@ -62,11 +62,19 @@ public partial class ViewTorrentViewModel : ViewModelBase
     partial void OnSelectedItemChanged(string value)
     {
         if (string.IsNullOrEmpty(value)) return;
-        var file = Path.Combine(TorrentPath, value);
-        using var s = File.OpenRead(file);
-        Memory<byte> content = new byte[s.Length];
-        _ = s.Read(content.Span);
-        var d = TorrentFileDecode.Decode(content.Span);
-        TorrentContent = d.ToString();
+        try
+        {
+            var file = Path.Combine(TorrentPath, value);
+            using var s = File.OpenRead(file);
+            Memory<byte> content = new byte[s.Length];
+            _ = s.Read(content.Span);
+
+            var d = TorrentFileDecode.Decode(content.Span);
+            TorrentContent = d.ToString();
+        }
+        catch (Exception e)
+        {
+            TorrentContent = e.Message;
+        }
     }
 }
