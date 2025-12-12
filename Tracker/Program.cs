@@ -13,7 +13,6 @@ using NLog.Extensions.Logging;
 using Umi.Dht.Client.Attributes;
 using Umi.Dht.Client.Configurations;
 using Umi.Dht.Client.Interceptors;
-using Umi.Dht.Client.TorrentIO.Utils;
 using LogLevel = NLog.LogLevel;
 
 namespace Umi.Dht.Client;
