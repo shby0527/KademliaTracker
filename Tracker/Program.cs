@@ -56,16 +56,14 @@ public static class Program
 
         //注册配置文件字段
         services.AddOptions();
-        var options = new HttpClientFactoryOptions();
-        options.HttpMessageHandlerBuilderActions.Add(builder => builder.PrimaryHandler = new HttpClientHandler()
-        {
-            Proxy = null,
-            UseProxy = false
-        });
+
         services.AddHttpClient("default",
                 client => client.DefaultRequestHeaders.Add("User-Agent", "Umi Dht Tracker"))
-            .ConfigurePrimaryHttpMessageHandler(provider => new LoggingHttpMessageHandler(
-                provider.GetRequiredService<ILogger<LoggingHttpMessageHandler>>(), options));
+            .ConfigurePrimaryHttpMessageHandler(_ => new HttpClientHandler()
+            {
+                UseProxy = false,
+                Proxy = null
+            });
 
         services.Configure<KademliaConfig>(context.Configuration.GetSection("Kademlia"));
     }

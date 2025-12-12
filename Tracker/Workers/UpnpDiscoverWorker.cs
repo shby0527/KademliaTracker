@@ -150,7 +150,7 @@ public class UpnpDiscoverWorker(
     private async Task TakeUPnPXml(string location, EndPoint? remote, IPAddress local)
     {
         logger.LogTrace("take xml from {location}", location);
-        using var client = httpClientFactory.CreateClient();
+        using var client = httpClientFactory.CreateClient("default");
         using var response = await client.GetAsync(location);
         if (!response.IsSuccessStatusCode)
         {
