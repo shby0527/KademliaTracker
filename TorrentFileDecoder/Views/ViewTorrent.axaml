@@ -21,18 +21,21 @@
     <Grid Margin="5" RowDefinitions="Auto Auto" ColumnDefinitions="40,6*,1*">
         <TextBlock Grid.Row="0" Grid.Column="0" Text="路径" TextAlignment="Center" />
         <TextBox Grid.Row="0" Grid.Column="1"
+                 xml:space="preserve"
+                 IsReadOnly="True"
                  Text="{Binding TorrentPath, Mode=TwoWay}" />
         <Button Grid.Row="0" Grid.Column="2" Height="35"
                 Content="选择文件夹"
                 HorizontalAlignment="Center"
                 Command="{Binding FileSelectorCommand}" />
-        <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="10" Height="400">
+        <StackPanel Margin="5" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="10" Height="400">
             <ListBox ItemsSource="{Binding FilesList}" SelectionMode="Single"
-                     SelectedItem="{Binding SelectedItem, Mode=OneWayToSource}" />
+                     SelectedItem="{Binding SelectedItem, Mode=OneWayToSource}" 
+                     Width="440"/>
             <TextBox IsReadOnly="True" AcceptsReturn="True" LineHeight="30" xml:space="preserve"
                      Text="{Binding TorrentContent}" 
                      TextWrapping="WrapWithOverflow"
-                     MaxWidth="440"/>
+                     Width="430"/>
         </StackPanel>
     </Grid>
 

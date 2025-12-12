@@ -45,7 +45,7 @@ public partial class ViewTorrentViewModel : ViewModelBase
             if (folder.Count > 0)
             {
                 var storageFolder = folder[0];
-                TorrentPath = storageFolder.Path.AbsolutePath;
+                TorrentPath = storageFolder.Path.LocalPath;
                 var items = storageFolder.GetItemsAsync();
                 await foreach (var file in items)
                 {
