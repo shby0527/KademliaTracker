@@ -29,7 +29,7 @@ public sealed class BitTorrentInfoHashManager(IServiceProvider provider) : IBitt
             if (_bitTorrentInfo.TryGetValue(btih, out var hash)) return hash;
             hash = new BitTorrentInfoHashPrivateTracker(infoHash.ToArray(),
                 provider.GetRequiredService<ILogger<BitTorrentInfoHashPrivateTracker>>(),
-                provider);
+                provider.CreateScope());
             _bitTorrentInfo[btih] = hash;
             return hash;
         }

@@ -1,4 +1,5 @@
 using System.Net;
+using Umi.Dht.Client.Bittorrent.MsgPack;
 using Umi.Dht.Client.Protocol;
 using Umi.Dht.Client.TorrentIO.StorageInfo;
 
@@ -16,6 +17,18 @@ public interface IBittorrentPeer : IPeer, IEquatable<IBittorrentPeer>, IEquatabl
 
     Task GetHashMetadata(long piece);
 
+    Task PeerInterested(bool interested);
+
+    Task HavePiece(uint piece);
+
+    Task BitField(ReadOnlyMemory<byte> data);
+
+    Task Choke(bool choke);
+
+    Task Request(RequestPiece piece);
+
+    Task Cancel(RequestPiece piece);
+
     event ExtensionHandshakeEventHandler ExtensionHandshake;
 
     event PeerExchangeEventHandler PeerExchange;
@@ -23,6 +36,12 @@ public interface IBittorrentPeer : IPeer, IEquatable<IBittorrentPeer>, IEquatabl
     event PeerCloseEventHandler PeerClose;
 
     event MetadataPieceEventHandler MetadataPiece;
+
+    event PeerPieceDataEventHandler PeerPieceData;
+
+    event PeerBitFieldEventHandler PeerBitField;
+
+    event PeerHavePieceEventHandler PeerHavePiece;
 }
 
 public interface IPeer

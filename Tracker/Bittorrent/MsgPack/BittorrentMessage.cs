@@ -1,6 +1,6 @@
 namespace Umi.Dht.Client.Bittorrent.MsgPack;
 
-public readonly ref struct BittorrentMessage
+public readonly struct BittorrentMessage
 {
     public const byte EXTENDED = 0x14;
     public const byte CHOKE = 0x00;

@@ -43,6 +43,23 @@ public class ExtensionHandshake(bool hasMetadataAttr, bool hasPeerExchange, long
     public bool HasPeerExchange { get; } = hasPeerExchange;
 }
 
+public class PeerHavePieceEventArg(uint piece) : EventArgs
+{
+    public uint Piece { get; } = piece;
+}
+
+public class PeerBitFieldEventArg(ReadOnlyMemory<byte> bitfield) : EventArgs
+{
+    public ReadOnlyMemory<byte> Bitfield { get; } = bitfield;
+}
+
+public class PeerPieceDataEventArg(uint piece, uint offset, ReadOnlyMemory<byte> pieceData) : EventArgs
+{
+    public ReadOnlyMemory<byte> PieceData { get; } = pieceData;
+    public uint Piece { get; } = piece;
+    public uint Offset { get; } = offset;
+}
+
 public delegate void ExtensionHandshakeEventHandler(IBittorrentPeer peer, ExtensionHandshake e);
 
 public delegate void PeerExchangeEventHandler(IBittorrentPeer sender, PeerExchangeEventArg e);
@@ -50,3 +67,9 @@ public delegate void PeerExchangeEventHandler(IBittorrentPeer sender, PeerExchan
 public delegate void MetadataPieceEventHandler(IBittorrentPeer sender, MetadataPieceEventArg e);
 
 public delegate void PeerCloseEventHandler(IBittorrentPeer sender, PeerCloseEventArg e);
+
+public delegate void PeerHavePieceEventHandler(IBittorrentPeer sender, PeerHavePieceEventArg e);
+
+public delegate void PeerBitFieldEventHandler(IBittorrentPeer sender, PeerBitFieldEventArg e);
+
+public delegate void PeerPieceDataEventHandler(IBittorrentPeer sender, PeerPieceDataEventArg e);

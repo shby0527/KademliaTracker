@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.Pipelines;
 using System.Net;
@@ -46,8 +47,9 @@ public sealed class SamplePeer : IBittorrentPeer
 
     private readonly Semaphore _semaphore = new(1, 1);
 
-
     private DateTimeOffset _aliveReceived = DateTimeOffset.UtcNow;
+
+    private readonly ConcurrentDictionary<long, Func<long, Task>> _retryMap;
 
     private volatile bool _finished;
 
@@ -68,12 +70,12 @@ public sealed class SamplePeer : IBittorrentPeer
 
 
     public SamplePeer(IServiceProvider provider, IPeer peer,
-        ILogger<SamplePeer> logger,
         byte[] infoHash,
         byte[] peerId)
     {
         _provider = provider;
-        _logger = logger;
+        _retryMap = new ConcurrentDictionary<long, Func<long, Task>>();
+        _logger = provider.GetRequiredService<ILogger<SamplePeer>>();
         _infoHash = infoHash;
         _pipe = new Pipe();
         _wanIpResolver = provider.GetRequiredService<IWanIPResolver>();
@@ -151,8 +153,15 @@ public sealed class SamplePeer : IBittorrentPeer
         _logger.LogDebug("send handshake to {address}:{port}, size is {size}", Address, Port, send);
         _processThread.Start();
         _keepAliveTimer = new Timer(
-            _ => this.KeepAlive().ConfigureAwait(false).GetAwaiter()
-                .OnCompleted(() => _logger.LogTrace("timer keepalive finished")),
+            _ => this.KeepAlive()
+                .ContinueWith(t => _logger.LogTrace("timer keepalive finished, {t}", t.Status))
+                .ContinueWith(t =>
+                {
+                    foreach (var kp in _retryMap)
+                    {
+                        kp.Value(kp.Key);
+                    }
+                }),
             null, TimeSpan.FromMinutes(2),
             TimeSpan.FromMinutes(2));
     }
@@ -607,12 +616,66 @@ public sealed class SamplePeer : IBittorrentPeer
         d[5] = (byte)_utMetadataId;
         requestData.CopyTo(d[6..]);
         await _client.SendAsync(d.ToArray());
+
+        _retryMap.TryAdd(piece, retryPiece => this.RetryGetHashMetadata(DateTimeOffset.UtcNow, retryPiece, 0));
+    }
+
+    private async Task RetryGetHashMetadata(DateTimeOffset sendTime, long piece, uint retryTimes)
+    {
+        if (sendTime + TimeSpan.FromMinutes(4) >= DateTimeOffset.UtcNow)
+        {
+            // 没有超时
+            return;
+        }
+
+        if (retryTimes > 5)
+        {
+            await this.Disconnect();
+            return;
+        }
+
+        _retryMap.TryRemove(piece, out _);
+        _retryMap.TryAdd(piece,
+            realPiece => this.RetryGetHashMetadata(DateTimeOffset.UtcNow, realPiece, retryTimes + 1));
+    }
+
+    public Task PeerInterested(bool interested)
+    {
+        throw new NotImplementedException("Sample Only Request Metadata");
+    }
+
+    public Task HavePiece(uint piece)
+    {
+        throw new NotImplementedException("Sample Only Request Metadata");
+    }
+
+    public Task BitField(ReadOnlyMemory<byte> data)
+    {
+        throw new NotImplementedException("Sample Only Request Metadata");
+    }
+
+    public Task Choke(bool choke)
+    {
+        throw new NotImplementedException("Sample Only Request Metadata");
+    }
+
+    public Task Request(RequestPiece piece)
+    {
+        throw new NotImplementedException("Sample Only Request Metadata");
+    }
+
+    public Task Cancel(RequestPiece piece)
+    {
+        throw new NotImplementedException("Sample Only Request Metadata");
     }
 
     public event ExtensionHandshakeEventHandler? ExtensionHandshake;
     public event PeerExchangeEventHandler? PeerExchange;
     public event PeerCloseEventHandler? PeerClose;
     public event MetadataPieceEventHandler? MetadataPiece;
+    public event PeerPieceDataEventHandler? PeerPieceData;
+    public event PeerBitFieldEventHandler? PeerBitField;
+    public event PeerHavePieceEventHandler? PeerHavePiece;
 
     public bool Equals(IBittorrentPeer? other)
     {
@@ -629,9 +692,11 @@ public sealed class SamplePeer : IBittorrentPeer
             _receiveEventArgs.Dispose();
             if (_client.Connected)
             {
+                _client.Shutdown(SocketShutdown.Both);
                 _client.Close();
             }
 
+            _retryMap.Clear();
             _semaphore.Dispose();
             _keepAliveTimer?.Dispose();
             _client.Dispose();
