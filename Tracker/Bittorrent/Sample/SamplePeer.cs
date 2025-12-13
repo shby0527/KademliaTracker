@@ -478,7 +478,7 @@ public sealed class SamplePeer : IBittorrentPeer
 
     private async Task OnOtherMessage(PipeReader reader)
     {
-        var header = await reader.ReadAsync().AsTask().ConfigureAwait(false);
+        var header = await reader.ReadAtLeastAsync(4);
         var lengthByte = header.Buffer.FirstSpan[..4];
         var length = BinaryPrimitives.ReadUInt32BigEndian(lengthByte);
         reader.AdvanceTo(header.Buffer.GetPosition(4));
@@ -504,13 +504,13 @@ public sealed class SamplePeer : IBittorrentPeer
         var message = MemoryPool<byte>.Shared.Rent((int)length);
         try
         {
-            var buffer = await reader.ReadAsync().AsTask().ConfigureAwait(false);
+            var buffer = await reader.ReadAsync();
 
             while (buffer is { IsCanceled: false, IsCompleted: false } && buffer.Buffer.Length < length)
             {
                 _logger.LogTrace("data not full need {nl}, now {l}", length, buffer.Buffer.Length);
                 reader.AdvanceTo(buffer.Buffer.Start, buffer.Buffer.End);
-                buffer = await reader.ReadAsync().AsTask().ConfigureAwait(false);
+                buffer = await reader.ReadAsync();
             }
 
             buffer.Buffer.Slice(buffer.Buffer.Start, length)
