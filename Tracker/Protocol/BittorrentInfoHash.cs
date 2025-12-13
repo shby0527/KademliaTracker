@@ -5,7 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Umi.Dht.Client.Bittorrent;
 using Umi.Dht.Client.Bittorrent.MsgPack;
-using Umi.Dht.Client.Bittorrent.Sample;
 using Umi.Dht.Client.Protocol;
 using Umi.Dht.Client.TorrentIO;
 using Umi.Dht.Client.TorrentIO.StorageInfo;
@@ -235,13 +234,20 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
             _metadataBuffers.Clear();
             lock (_syncPeer)
             {
-                foreach (var peer in _activePeers)
+                var node = _activePeers.First;
+                while (node is not null)
                 {
-                    _ = peer.GetHashMetadata(0)
-                        .ContinueWith(task => _logger.LogInformation("{s} finished", task.Status));
+                    var current = node;
+                    node = node.Next;
+                    _activePeers.Remove(current);
+                    _deathPeer.AddLast(current);
+                    current.Value.Disconnect()
+                        .ContinueWith(t => _logger.LogInformation("{s} finished, close connect", t.Status));
                 }
             }
 
+            this.TryBeginConnect()
+                .ContinueWith(t => _logger.LogTrace("task finished for begin connect"));
             return;
         }
 
@@ -380,8 +386,6 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
     {
         if (_disposed) return;
         _disposed = true;
-        _semaphore.Dispose();
-        _scope.Dispose();
         lock (_syncPeer)
         {
             if (_bittorrentPeers.Count > 0)
@@ -431,5 +435,8 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
                 }
             }
         }
+
+        _semaphore.Dispose();
+        _scope.Dispose();
     }
 }
