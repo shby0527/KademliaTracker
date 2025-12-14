@@ -1,0 +1,30 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:TorrentFileDecoder.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="300" d:DesignHeight="200"
+        Width="300" Height="200"
+        CanMaximize="False" CanResize="False" CanMinimize="False"
+        x:Class="TorrentFileDecoder.Views.MessageBoxWindows"
+        x:DataType="vm:MessageBoxViewModel"
+        Title="{Binding Title}"
+        Name="MsgBoxWinRef">
+
+    <Design.DataContext>
+        <vm:MessageBoxViewModel />
+    </Design.DataContext>
+
+    <StackPanel Orientation="Vertical" Spacing="10" Margin="10" VerticalAlignment="Top">
+        <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Height="110" FontSize="20" Text="{Binding Message}" />
+        <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+            <Button Width="120" HorizontalContentAlignment="Center"
+                    Content="确定" Command="{Binding OkButtonClickCommand}"
+                    CommandParameter="{Binding #MsgBoxWinRef}" />
+            <Button Width="120" HorizontalContentAlignment="Center"
+                    Content="取消" Command="{Binding CancelButtonClickCommand}"
+                    CommandParameter="{Binding #MsgBoxWinRef}" />
+        </StackPanel>
+    </StackPanel>
+</Window>
