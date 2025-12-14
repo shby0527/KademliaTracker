@@ -220,9 +220,9 @@ public sealed class SamplePeer : IBittorrentPeer
         var reader = _pipe.Reader;
         while (!_finished)
         {
-            _semaphore.WaitOne();
             try
             {
+                _semaphore.WaitOne();
                 if (!_hasPeerHandshake)
                 {
                     this.OnPeerHandshake(reader)
@@ -243,7 +243,14 @@ public sealed class SamplePeer : IBittorrentPeer
             }
             finally
             {
-                _semaphore.Release();
+                try
+                {
+                    _semaphore.Release();
+                }
+                catch (Exception e)
+                {
+                    _logger.LogError(e, "semaphore Release error");
+                }
             }
         }
 
@@ -479,6 +486,13 @@ public sealed class SamplePeer : IBittorrentPeer
     private async Task OnOtherMessage(PipeReader reader)
     {
         var header = await reader.ReadAtLeastAsync(4);
+        if (header.Buffer.Length < 4)
+        {
+            _logger.LogWarning("header length too small");
+            reader.AdvanceTo(header.Buffer.End);
+            return;
+        }
+
         var lengthByte = header.Buffer.FirstSpan[..4];
         var length = BinaryPrimitives.ReadUInt32BigEndian(lengthByte);
         reader.AdvanceTo(header.Buffer.GetPosition(4));
@@ -511,6 +525,13 @@ public sealed class SamplePeer : IBittorrentPeer
                 _logger.LogTrace("data not full need {nl}, now {l}", length, buffer.Buffer.Length);
                 reader.AdvanceTo(buffer.Buffer.Start, buffer.Buffer.End);
                 buffer = await reader.ReadAsync();
+            }
+
+            if (buffer.Buffer.Length < length)
+            {
+                _logger.LogWarning("package length : {l} not enough, act: {al}", length, buffer.Buffer.Length);
+                reader.AdvanceTo(buffer.Buffer.End);
+                return;
             }
 
             buffer.Buffer.Slice(buffer.Buffer.Start, length)
@@ -665,6 +686,11 @@ public sealed class SamplePeer : IBittorrentPeer
     }
 
     public Task Cancel(RequestPiece piece)
+    {
+        throw new NotImplementedException("Sample Only Request Metadata");
+    }
+
+    public Task SendData(ReadOnlyMemory<byte> data, uint piece, uint offset)
     {
         throw new NotImplementedException("Sample Only Request Metadata");
     }

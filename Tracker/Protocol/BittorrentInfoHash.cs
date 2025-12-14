@@ -419,7 +419,6 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
                     }
 
                     first = first.Next;
-                    _activePeers.Remove(current);
                 }
             }
 

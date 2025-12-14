@@ -101,10 +101,19 @@ public partial class KRouter : IDisposable
 
     public bool TryFoundNode(ReadOnlySpan<byte> node, [MaybeNullWhen(false)] out NodeInfo info)
     {
-        var distances = ComputeDistances(node, _currentNode.Span);
-        var k = FindNestDistanceBucket(distances);
-        info = k.Value[node];
-        return info != null;
+        try
+        {
+            var distances = ComputeDistances(node, _currentNode.Span);
+            var k = FindNestDistanceBucket(distances);
+            info = k.Value[node];
+            return info != null;
+        }
+        catch (Exception e)
+        {
+            _logger.LogWarning(e, "some error throws");
+            info = null;
+            return false;
+        }
     }
 
     public IEnumerable<NodeInfo> FindNodeList(ReadOnlySpan<byte> target)

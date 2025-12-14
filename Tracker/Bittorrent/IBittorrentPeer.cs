@@ -29,6 +29,8 @@ public interface IBittorrentPeer : IPeer, IEquatable<IBittorrentPeer>, IEquatabl
 
     Task Cancel(RequestPiece piece);
 
+    Task SendData(ReadOnlyMemory<byte> data, uint piece, uint offset);
+
     event ExtensionHandshakeEventHandler ExtensionHandshake;
 
     event PeerExchangeEventHandler PeerExchange;
