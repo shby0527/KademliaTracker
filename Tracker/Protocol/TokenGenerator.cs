@@ -10,7 +10,7 @@ public class TokenGenerator
 
     private readonly TimeSpan _halfHour = TimeSpan.FromMinutes(30);
 
-    private readonly object _sync = new();
+    private readonly Lock _sync = new();
 
     public ReadOnlySpan<byte> Token
     {

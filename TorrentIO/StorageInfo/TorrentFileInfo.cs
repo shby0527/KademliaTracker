@@ -61,7 +61,7 @@ public readonly struct TorrentFileInfo
     }
 }
 
-public readonly struct TorrentDirectoryInfo
+public readonly record struct TorrentDirectoryInfo
 {
     public required string Name { get; init; }
 

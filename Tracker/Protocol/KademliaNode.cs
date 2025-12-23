@@ -8,7 +8,10 @@ using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Umi.Dht.Client.Attributes;
 using Umi.Dht.Client.Bittorrent;
+using Umi.Dht.Client.Commands;
 using Umi.Dht.Client.Configurations;
 using Umi.Dht.Client.TorrentIO;
 using Umi.Dht.Client.TorrentIO.StorageInfo;
@@ -16,7 +19,8 @@ using Umi.Dht.Client.Utils;
 
 namespace Umi.Dht.Client.Protocol;
 
-public class KademliaNode
+[Service(ServiceScope.Singleton)]
+public sealed class KademliaNode : IKademliaNodeInstance, IKademliaCommand
 {
     private bool _isStopped = false;
 
@@ -48,12 +52,14 @@ public class KademliaNode
 
     private readonly IMagnetLinkStorage? _magnetLinkStorage;
 
-    public KademliaNode(ReadOnlyMemory<byte> nodeId, IServiceProvider provider, KademliaConfig config)
+    public KademliaNode(INodeIdFactory nodeIdFactory,
+        IServiceProvider provider,
+        IOptionsSnapshot<KademliaConfig> config)
     {
-        CLIENT_NODE_ID = nodeId;
-        _config = config;
+        CLIENT_NODE_ID = nodeIdFactory.NodeId;
+        _config = config.Value;
         _logger = provider.GetRequiredService<ILogger<KademliaNode>>();
-        _kRouter = new KRouter(nodeId, provider);
+        _kRouter = new KRouter(CLIENT_NODE_ID, provider);
         _environment = provider.GetRequiredService<IHostEnvironment>();
         _magnetLinkStorage = provider.GetService<IMagnetLinkStorage>();
         _torrentInfoHashManager = provider.GetRequiredService<IBittorrentInfoHashManager>();
@@ -86,12 +92,6 @@ public class KademliaNode
         _logger.LogTrace("initial KBucket");
         ThreadPool.QueueUserWorkItem(_ => this.Initial());
         _timer = new Timer(_ => this.CheckPackageALive(), null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
-    }
-
-
-    public void ReBootstrap()
-    {
-        this.Initial();
     }
 
     private void Initial()
@@ -549,7 +549,7 @@ public class KademliaNode
     }
 
 
-    public void SendGetPeers(ReadOnlySpan<byte> infoHash)
+    private void SendGetPeers(ReadOnlySpan<byte> infoHash)
     {
         // 计算距离
         var distances = KRouter.ComputeDistances(infoHash, CLIENT_NODE_ID.Span);
@@ -563,15 +563,19 @@ public class KademliaNode
         }
     }
 
-
-    public string GetNodeCount()
+    public void ReBootstrap()
     {
-        return _kRouter.NodeCount.ToString();
+        this.Initial();
     }
 
-    public string GetBucketCount()
+    public long GetNodeCount()
     {
-        return _kRouter.KBucketsCount.ToString();
+        return _kRouter.NodeCount;
+    }
+
+    public long GetBucketCount()
+    {
+        return _kRouter.KBucketsCount;
     }
 
     public RouterAvg GetAvg()
@@ -585,16 +589,11 @@ public class KademliaNode
         return avg;
     }
 
-    public string ListBitTorrentInfoHash()
+    public IDictionary<string, (int Count, bool Received)> ListBitTorrentInfoHash()
     {
-        StringBuilder sb = new();
-        foreach (var item in _torrentInfoHashManager)
-        {
-            sb.Append(
-                $"{item.HashText}: peers count {item.Peers.Count.ToString()}, metadata received: {item.HasMetadataReceived}\r\n");
-        }
-
-        return sb.ToString();
+        return _torrentInfoHashManager
+            .ToImmutableDictionary(p => p.HashText,
+                p => (p.Peers.Count, p.HasMetadataReceived));
     }
 
     private void OnBucketRefresh(KRouter router, KBucket bucket)
@@ -602,23 +601,12 @@ public class KademliaNode
         _logger.LogDebug("bucket {dists}-{diste} refreshing", bucket.BucketDistance[0], bucket.BucketDistance[1]);
     }
 
-    public void QueueReceiveInfoHashMetadata(string btih)
-    {
-        _logger.LogDebug("begin receiving  info hash metadata, total {t}", _torrentInfoHashManager.Count);
-        var waitMetadata = new Thread(() => _torrentInfoHashManager.TryReceiveInfoHashMetadata(btih))
-        {
-            IsBackground = true,
-            Name = "Metadata Receiver"
-        };
-        waitMetadata.Start();
-    }
-
-    public string ShowReceivedMetadata()
+    public IDictionary<string, TorrentDirectoryInfo> ShowReceivedMetadata()
     {
         var received = from p in _torrentInfoHashManager
             where p.HasMetadataReceived
             select p;
-        return string.Join('\n', received.Select(p => $"{p.HashText}: \n\t\t {p.TorrentDirectoryInfo}"));
+        return received.ToImmutableDictionary(p => p.HashText, p => p.TorrentDirectoryInfo);
     }
 
     private void OnNodeCheckPing(KBucket bucket, NodeInfo node)
