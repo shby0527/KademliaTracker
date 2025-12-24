@@ -103,6 +103,8 @@ public sealed class SamplePeer : IBittorrentPeer
 
     public int Port { get; }
 
+    public byte Flags => 0;
+
     public bool IsConnected { get; private set; }
 
     private IPAddress? GetWanIp() => string.IsNullOrEmpty(_wanIpResolver.ExternalIPAddress?.Value)
@@ -441,18 +443,7 @@ public sealed class SamplePeer : IBittorrentPeer
         var map = BEncoder.BDecodeToMap(ref enumerator);
         List<IPeer> added = [];
         List<IPeer> dropped = [];
-        if (map.TryGetValue("added", out var addedObj) && addedObj is byte[] addedData)
-        {
-            ReadOnlySpan<byte> compactAddrData = addedData;
-            for (var i = 0; i < compactAddrData.Length / 6; i += 6)
-            {
-                var oneAddr = compactAddrData[i..(i + 6)];
-                var addr = new IPAddress(oneAddr[..4]);
-                var port = BinaryPrimitives.ReadUInt16BigEndian(oneAddr[4..]);
-                var peer = BitTorrentInfoHashManager.CreatePeer(addr, port, Node);
-                added.Add(peer);
-            }
-        }
+        List<byte> flags = [];
 
         if (map.TryGetValue("added.f", out var addrf) && addrf is byte[] addrfData)
         {
@@ -461,8 +452,25 @@ public sealed class SamplePeer : IBittorrentPeer
             {
                 var flag = compactAddrFData[i];
                 _logger.LogTrace("this {i} one has {v}", i, flag);
+                flags.Add(flag);
             }
         }
+
+        if (map.TryGetValue("added", out var addedObj) && addedObj is byte[] addedData)
+        {
+            ReadOnlySpan<byte> compactAddrData = addedData;
+            for (var i = 0; i < compactAddrData.Length / 6; i += 6)
+            {
+                var oneAddr = compactAddrData[i..(i + 6)];
+                var addr = new IPAddress(oneAddr[..4]);
+                var port = BinaryPrimitives.ReadUInt16BigEndian(oneAddr[4..]);
+
+                var peer = BitTorrentInfoHashManager.CreatePeer(addr, port, Node,
+                    flags.Count < i / 6 ? (byte)0 : flags[i / 6]);
+                added.Add(peer);
+            }
+        }
+
 
         // dropped
         if (map.TryGetValue("dropped", out var droppedObj) && droppedObj is byte[] droppedData)
@@ -473,7 +481,7 @@ public sealed class SamplePeer : IBittorrentPeer
                 var oneAddr = compactAddrDropped[i..(i + 6)];
                 var addr = new IPAddress(oneAddr[..4]);
                 var port = BinaryPrimitives.ReadUInt16BigEndian(oneAddr[4..]);
-                var peer = BitTorrentInfoHashManager.CreatePeer(addr, port, Node);
+                var peer = BitTorrentInfoHashManager.CreatePeer(addr, port, Node, 0);
                 dropped.Add(peer);
             }
         }
@@ -649,8 +657,10 @@ public sealed class SamplePeer : IBittorrentPeer
             return;
         }
 
+        _logger.LogTrace("do retry {piece} get hash metadata", piece);
         if (retryTimes > 5)
         {
+            _logger.LogWarning("time out receive {piece}", piece);
             await this.Disconnect();
             return;
         }

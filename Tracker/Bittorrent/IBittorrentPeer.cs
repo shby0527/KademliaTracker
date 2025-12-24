@@ -53,4 +53,6 @@ public interface IPeer
     IPAddress Address { get; }
 
     int Port { get; }
+
+    byte Flags { get; }
 }

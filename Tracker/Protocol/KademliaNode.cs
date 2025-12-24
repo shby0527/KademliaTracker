@@ -191,12 +191,23 @@ public sealed class KademliaNode : IKademliaNodeInstance, IKademliaCommand
     {
         _logger.LogTrace("received get peers response");
         if (response.Response == null) return;
-        if (remote is not IPEndPoint) return;
+        if (remote is not IPEndPoint ip) return;
         var dictionary = response.Response;
-        ReadOnlySpan<byte> nodeId = (byte[])dictionary["id"];
-        if (_kRouter.TryFoundNode(nodeId, out var node))
+        ReadOnlyMemory<byte> nodeId = (byte[])dictionary["id"];
+        if (_kRouter.TryFoundNode(nodeId.Span, out var node))
         {
             _kRouter.AdjustNode(node);
+        }
+        else
+        {
+            node = new NodeInfo
+            {
+                Distance = KRouter.ComputeDistances(_clientNodeId.Span, nodeId.Span),
+                NodeAddress = ip.Address,
+                NodeId = nodeId,
+                NodePort = ip.Port
+            };
+            _kRouter.AddNode(node);
         }
 
         if (dictionary.TryGetValue("nodes", out var nodes))
@@ -258,7 +269,7 @@ public sealed class KademliaNode : IKademliaNodeInstance, IKademliaCommand
                 ReadOnlySpan<byte> peerData = pip;
                 var address = new IPAddress(peerData[..4]);
                 var port = BinaryPrimitives.ReadUInt16BigEndian(peerData[4..6]);
-                p.Add(BitTorrentInfoHashManager.CreatePeer(address, port, node!));
+                p.Add(BitTorrentInfoHashManager.CreatePeer(address, port, node, 0));
             }
 
             torrentInfoHash.AddPeers(p);
@@ -364,13 +375,13 @@ public sealed class KademliaNode : IKademliaNodeInstance, IKademliaCommand
         var infoHash = _torrentInfoHashManager.AddBitTorrentInfoHash(hash);
         if (arguments.TryGetValue("implied_port", out var iPort) && iPort is long p && p != 0)
         {
-            var peer = BitTorrentInfoHashManager.CreatePeer(ip.Address, ip.Port, node);
+            var peer = BitTorrentInfoHashManager.CreatePeer(ip.Address, ip.Port, node, 0);
             infoHash.AddPeers([peer]);
         }
         else
         {
             var eport = (long)arguments["port"];
-            var peer = BitTorrentInfoHashManager.CreatePeer(ip.Address, (int)eport, node);
+            var peer = BitTorrentInfoHashManager.CreatePeer(ip.Address, (int)eport, node, 0);
             infoHash.AddPeers([peer]);
         }
 

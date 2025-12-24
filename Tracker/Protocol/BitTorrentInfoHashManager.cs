@@ -41,9 +41,9 @@ public sealed class BitTorrentInfoHashManager(IServiceProvider provider) : IBitt
         return _bitTorrentInfo.TryGetValue(btih, out bitTorrentInfoHash);
     }
 
-    public static IPeer CreatePeer(IPAddress address, int port, NodeInfo node)
+    public static IPeer CreatePeer(IPAddress address, int port, NodeInfo node, byte flags)
     {
-        return new PeerInfoPrivateTracker(address, port, node);
+        return new PeerInfoPrivateTracker(address, port, node, flags);
     }
 
     public void TryReceiveInfoHashMetadata(string btih)
@@ -76,10 +76,12 @@ public sealed class BitTorrentInfoHashManager(IServiceProvider provider) : IBitt
         }
     }
 
-    private class PeerInfoPrivateTracker(IPAddress address, int port, NodeInfo node) : IPeer
+    private class PeerInfoPrivateTracker(IPAddress address, int port, NodeInfo node, byte flags) : IPeer
     {
         public NodeInfo Node => node;
         public IPAddress Address => address;
         public int Port => port;
+
+        public byte Flags => flags;
     }
 }
