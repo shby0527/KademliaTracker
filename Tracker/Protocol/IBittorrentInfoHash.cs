@@ -19,9 +19,7 @@ public interface IBitTorrentInfoHash : IDisposable
 
     void AddPeers(IEnumerable<IPeer> peers);
 
-    public long MetadataPieceCount { get; }
-
-    public long PieceSize { get; }
+    public long MetadataLength { get; }
 
     ValueTask BeginGetMetadata();
 

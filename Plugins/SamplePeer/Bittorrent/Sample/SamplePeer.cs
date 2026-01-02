@@ -10,7 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Umi.Dht.Client.Bittorrent.MsgPack;
 using Umi.Dht.Client.Protocol;
-using Umi.Dht.Client.TorrentIO.StorageInfo;
 using Umi.Dht.Client.TorrentIO.Utils;
 using Umi.Dht.Client.UPnP;
 using ThreadState = System.Threading.ThreadState;
@@ -65,10 +64,8 @@ public sealed class SamplePeer : IBittorrentPeer
     // 对端 peer id
     private readonly Memory<byte> _connectedPeerId;
 
-    private long _pieceLength = 0;
-    private long _pieceCount = 0;
-
-
+    private long _metadataLength = 0;
+    
     public SamplePeer(IServiceProvider provider, IPeer peer,
         byte[] infoHash,
         byte[] peerId)
@@ -78,6 +75,7 @@ public sealed class SamplePeer : IBittorrentPeer
         _logger = provider.GetRequiredService<ILogger<SamplePeer>>();
         _infoHash = infoHash;
         _pipe = new Pipe();
+        Id = Guid.NewGuid().ToString();
         _wanIpResolver = provider.GetRequiredService<IWanIPResolver>();
         Node = peer.Node;
         Address = peer.Address;
@@ -104,6 +102,10 @@ public sealed class SamplePeer : IBittorrentPeer
     public int Port { get; }
 
     public byte Flags => 0;
+
+    public string Id { get; }
+
+    public ReadOnlySpan<byte> PeerId => _peerId.Span;
 
     public bool IsConnected { get; private set; }
 
@@ -180,12 +182,8 @@ public sealed class SamplePeer : IBittorrentPeer
         }
     }
 
-    public MetadataPiece Metadata => _hasMetadataHandshake
-        ? new MetadataPiece
-        {
-            PieceCount = _pieceCount,
-            PieceLength = _pieceLength
-        }
+    public long MetadataLenght => _hasMetadataHandshake
+        ? _metadataLength
         : throw new InvalidOperationException("Handshake is not complete");
 
     private void OnSocketCompleted(object? sender, SocketAsyncEventArgs args)
@@ -366,10 +364,10 @@ public sealed class SamplePeer : IBittorrentPeer
             _hasMetadataHandshake = true;
             if (map.TryGetValue("metadata_size", out var metadataSize) && metadataSize is long size)
             {
-                _pieceLength = size;
-                _pieceCount = size / BittorrentMessage.PIECE_SIZE;
-                _logger.LogDebug("metadata handshake processed, piece length {l}, total count {c}",
-                    _pieceLength, _pieceCount);
+                _metadataLength = size;
+
+                _logger.LogDebug("metadata handshake processed, piece length {l}",
+                    _metadataLength);
             }
         }
         else
@@ -386,7 +384,7 @@ public sealed class SamplePeer : IBittorrentPeer
 
         _hasExtensionHandshake = true;
         ExtensionHandshake?.Invoke(this,
-            new ExtensionHandshake(_hasMetadataHandshake, _hasPeerHandshake, _pieceLength));
+            new ExtensionHandshake(_hasMetadataHandshake, _hasPeerHandshake, _metadataLength));
         _logger.LogTrace("end process Extension Handshake, other package {package}", map);
     }
 

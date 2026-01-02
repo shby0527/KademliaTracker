@@ -7,13 +7,17 @@ namespace Umi.Dht.Client.Bittorrent;
 
 public interface IBittorrentPeer : IPeer, IEquatable<IBittorrentPeer>, IEquatable<IPeer>, IDisposable
 {
+    string Id { get; }
+
+    ReadOnlySpan<byte> PeerId { get; }
+
     bool IsConnected { get; }
 
     Task Connect();
 
     Task Disconnect();
 
-    MetadataPiece Metadata { get; }
+    long MetadataLenght { get; }
 
     Task GetHashMetadata(long piece);
 

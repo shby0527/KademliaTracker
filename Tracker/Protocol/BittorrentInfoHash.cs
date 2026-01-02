@@ -1,8 +1,10 @@
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Numerics;
-using System.Security.Cryptography;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Org.BouncyCastle.Crypto;
+using Org.BouncyCastle.Crypto.Digests;
 using Umi.Dht.Client.Bittorrent;
 using Umi.Dht.Client.Bittorrent.MsgPack;
 using Umi.Dht.Client.Protocol;
@@ -35,11 +37,9 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
 
     private TorrentFileInfo? _info;
 
-    private readonly LinkedList<(long Piece, ReadOnlyMemory<byte> Buffer)> _metadataBuffers = [];
+    private readonly IDictionary<long, IDictionary<string, ReadOnlyMemory<byte>>> _metadataBuffers;
 
-    private long _pieceSize = 0;
-
-    private long _pieceCount = 0;
+    private readonly IDictionary<string, long> _metadataLengthMap;
 
     public string HashText => Convert.ToHexString(_btih.Span);
     public ReadOnlySpan<byte> Hash => _btih.Span;
@@ -58,6 +58,10 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         _peerFactory = scope.ServiceProvider.GetRequiredService<IBittorrentPeerFactory>();
         _info = _storage?.Exists(btih);
         _hasMetadataReceived = _info is not null;
+        _metadataLengthMap = new ConcurrentDictionary<string, long>();
+        _metadataBuffers =
+            new SortedDictionary<long, IDictionary<string, ReadOnlyMemory<byte>>>(
+                Comparer<long>.Create((l, r) => l < r ? -1 : l == r ? 0 : 1));
     }
 
     public IReadOnlyList<IPeer> Peers
@@ -181,28 +185,26 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
             _semaphore.WaitOne();
             _logger.LogInformation("metadata received, piece: {piece}", e.Piece);
             if (e.MsgType != 1) return;
-            _pieceSize = e.Length;
+            _metadataLengthMap[sender.Id] = e.Length;
             // 已经存在的分片，就应该无视
-            if (_metadataBuffers.Any(p => p.Piece == e.Piece)) return;
+            if (!_metadataBuffers.TryGetValue(e.Piece, out var buffers))
+            {
+                buffers = new ConcurrentDictionary<string, ReadOnlyMemory<byte>>();
+                _metadataBuffers.Add(e.Piece, buffers);
+            }
+
             var buffer = e.Buffer;
             Memory<byte> memory = new byte[buffer.Length];
 
             buffer.CopyTo(memory);
             memory = memory[..(int)(e.Length > buffer.Length ? buffer.Length : e.Length)];
-            var node = _metadataBuffers.Last;
-            while (node is not null)
-            {
-                if (node.Value.Piece < e.Piece) break;
-                node = node.Previous;
-            }
 
-            if (node is null) _metadataBuffers.AddFirst((e.Piece, memory));
-            else _metadataBuffers.AddAfter(node, (e.Piece, memory));
+            buffers[sender.Id] = memory;
 
-            if (_metadataBuffers.Sum(p => p.Buffer.Length) >= e.Length)
+            if (_metadataBuffers.Sum(p => p.Value.TryGetValue(sender.Id, out var value) ? value.Length : 0) >= e.Length)
             {
                 // 完整的
-                this.DoMetadataParser();
+                this.DoMetadataParser(sender);
                 return;
             }
 
@@ -215,35 +217,42 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         }
     }
 
-    private void DoMetadataParser()
+    private void DoMetadataParser(IBittorrentPeer peer)
     {
+        if (_hasMetadataReceived)
+        {
+            _logger.LogDebug("metadata already received");
+            return;
+        }
+
         _logger.LogInformation("begin parser metadata");
 
         var sequence =
-            MetadataSequence.CreateSequenceFromList(_metadataBuffers.Select(p => p.Buffer));
-        var buffer = new byte[sequence.Length];
-        Memory<byte> merged = buffer;
+            MetadataSequence.CreateSequenceFromList(_metadataBuffers.Select(p =>
+                p.Value.TryGetValue(peer.Id, out var value) ? value : ReadOnlyMemory<byte>.Empty));
+        Memory<byte> merged = new byte[sequence.Length];
         sequence.CopyTo(merged.Span);
-        using var sha1 = SHA1.Create();
-        ReadOnlySpan<byte> computeHash = sha1.ComputeHash(buffer);
+        IDigest digest = new Sha1Digest();
+        digest.BlockUpdate(merged.Span);
+        Span<byte> computeHash = stackalloc byte[digest.GetDigestSize()];
+        digest.DoFinal(computeHash);
         if (!computeHash.SequenceEqual(_btih.Span))
         {
             _logger.LogWarning("info hash compute hash not matched btih:{btih}, sha1: {sha1}",
                 Convert.ToHexString(_btih.Span), Convert.ToHexString(computeHash));
-            // 丢弃全部数据，重新获取
-            _metadataBuffers.Clear();
+            // 丢弃该节点全部数据，重新获取
+            foreach (var memories in _metadataBuffers.Values)
+            {
+                memories.Remove(peer.Id);
+            }
+
             lock (_syncPeer)
             {
-                var node = _activePeers.First;
-                while (node is not null)
-                {
-                    var current = node;
-                    node = node.Next;
-                    _activePeers.Remove(current);
-                    _deathPeer.AddLast(current);
-                    current.Value.Disconnect()
-                        .ContinueWith(t => _logger.LogInformation("{s} finished, close connect", t.Status));
-                }
+                _activePeers.Remove(peer);
+                _deathPeer.AddLast(peer);
+                peer.Disconnect()
+                    .ContinueWith(_ => _logger.LogTrace($"{peer.Id} disconnected"))
+                    .ContinueWith(_ => peer.Dispose());
             }
 
             this.TryBeginConnect()
@@ -327,8 +336,7 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
             _semaphore.WaitOne();
             _logger.LogInformation("extension handshake finish, peer has metadata exchange: {e} peer exchange {p}, ",
                 e.HasMetadataAttr, e.HasPeerExchange);
-            this._pieceCount = 0;
-            this._pieceSize = e.MetadataLength;
+            _metadataLengthMap[peer.Id] = e.MetadataLength;
             if (e.HasMetadataAttr)
             {
                 // 这里先请求第一片
@@ -356,13 +364,9 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         }
     }
 
-    public long MetadataPieceCount => !_hasMetadataReceived
+    public long MetadataLength => !_hasMetadataReceived
         ? throw new InvalidOperationException("metadata has not been handshaked")
-        : _pieceCount;
-
-    public long PieceSize => !_hasMetadataReceived
-        ? throw new InvalidOperationException("metadata has not been handshaked")
-        : _pieceSize;
+        : _metadataLengthMap.Values.First();
 
     public bool HasMetadataReceived => _hasMetadataReceived;
 
