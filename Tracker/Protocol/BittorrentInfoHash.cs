@@ -238,8 +238,8 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         digest.DoFinal(computeHash);
         if (!computeHash.SequenceEqual(_btih.Span))
         {
-            _logger.LogWarning("info hash compute hash not matched btih:{btih}, sha1: {sha1}",
-                Convert.ToHexString(_btih.Span), Convert.ToHexString(computeHash));
+            _logger.LogWarning("info hash compute hash not matched peerId {peerId} btih:{btih}, sha1: {sha1}",
+                peer.Id, Convert.ToHexString(_btih.Span), Convert.ToHexString(computeHash));
             // 丢弃该节点全部数据，重新获取
             foreach (var memories in _metadataBuffers.Values)
             {
