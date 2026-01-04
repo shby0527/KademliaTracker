@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Digests;
+using Org.BouncyCastle.Security;
 using Umi.Dht.Client.Bittorrent;
 using Umi.Dht.Client.Bittorrent.MsgPack;
 using Umi.Dht.Client.Protocol;
@@ -232,7 +233,7 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
                 p.Value.TryGetValue(peer.Id, out var value) ? value : ReadOnlyMemory<byte>.Empty));
         Memory<byte> merged = new byte[sequence.Length];
         sequence.CopyTo(merged.Span);
-        IDigest digest = new Sha1Digest();
+        var digest = DigestUtilities.GetDigest("SHA1");
         digest.BlockUpdate(merged.Span);
         Span<byte> computeHash = stackalloc byte[digest.GetDigestSize()];
         digest.DoFinal(computeHash);
