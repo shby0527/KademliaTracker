@@ -3,7 +3,9 @@ using System.Net.Sockets;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Umi.Dht.Client.Attributes;
+using Umi.Dht.Client.Telnet.Configurations;
 using Umi.Dht.Client.Telnet.Implements;
 
 namespace Umi.Dht.Client.Telnet.Workers;
@@ -11,8 +13,8 @@ namespace Umi.Dht.Client.Telnet.Workers;
 [Service(ServiceScope.Singleton)]
 public class TelnetCommandWorker(
     ILogger<TelnetCommandWorker> logger,
-    IServiceProvider provider,
-    IConfiguration configuration
+    IOptions<TelnetOptions> options,
+    IServiceProvider provider
 ) : BackgroundService
 {
     private readonly Socket _socket = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
@@ -23,7 +25,7 @@ public class TelnetCommandWorker(
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var consolePort = configuration.GetValue<int?>("console-port") ?? 24489;
+        var consolePort = options.Value.Port;
         _socket.Bind(new IPEndPoint(IPAddress.Any, consolePort));
         _socket.Listen(10);
         _acceptArgs.Completed += this.OnAccept;
