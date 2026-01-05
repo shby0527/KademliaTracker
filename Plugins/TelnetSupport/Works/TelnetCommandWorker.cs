@@ -1,13 +1,12 @@
-using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Umi.Dht.Client.Attributes;
-using Umi.Dht.Client.Operator;
+using Umi.Dht.Client.Telnet.Implements;
 
-namespace Umi.Dht.Client.Workers;
+namespace Umi.Dht.Client.Telnet.Workers;
 
 [Service(ServiceScope.Singleton)]
 public class TelnetCommandWorker(

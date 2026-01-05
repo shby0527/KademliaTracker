@@ -7,8 +7,6 @@ using Castle.DynamicProxy;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Http;
-using Microsoft.Extensions.Http.Logging;
 using Microsoft.Extensions.Logging;
 using NLog;
 using NLog.Extensions.Logging;
@@ -21,6 +19,32 @@ namespace Umi.Dht.Client;
 
 public static class Program
 {
+    private static Assembly[] _assemblies = [];
+
+
+    private static void LoadAssemblies(Logger logger)
+    {
+        var contents = new DirectoryInfo(Path.Combine(Directory.GetCurrentDirectory(), "plugins"));
+        List<Assembly> allAssembly = [typeof(Program).Assembly];
+        if (contents is not { Exists: true }) return;
+        foreach (var file in contents.EnumerateFiles("*.dll"))
+        {
+            if (file is not { Exists: true }) continue;
+            logger.Log(LogLevel.Debug, "loading assembly {physicalPath}", file.FullName);
+            try
+            {
+                allAssembly.Add(Assembly.LoadFrom(file.FullName));
+            }
+            catch (Exception e)
+            {
+                logger.Log(LogLevel.Error, e, "Error loading assembly {physicalPath}", file.FullName);
+                continue;
+            }
+        }
+
+        _assemblies = allAssembly.ToArray();
+    }
+
     // 主入口，主要程序
     public static void Main(string[] args)
     {
@@ -32,13 +56,15 @@ public static class Program
             .LogFactory;
         var rootLogger = logFactory.GetLogger(typeof(Program).FullName!);
         rootLogger.Log(LogLevel.Debug, "Umi Distributed Hash Table Tracker Starting, version: 1.0.0");
+        // load all plugins
+        LoadAssemblies(rootLogger);
         // 开始创建 Host
         var host = new HostBuilder()
             .UseEnvironment(Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? "Production")
             .UseContentRoot(Directory.GetCurrentDirectory())
             .ConfigureHostConfiguration(ConfigureHostConfigurationBuilder(args))
             .ConfigureAppConfiguration(ConfigureAppConfigurationBuilder(args))
-            .ConfigureContainer(LoadAssemblies(rootLogger))
+            .ConfigureContainer(RegisterAssemblies(rootLogger))
             .UseServiceProviderFactory(_ => new AutofacServiceProviderFactory())
             .ConfigureLogging(ConfigurationLoggingBuilder(logFactory))
             .ConfigureServices(ConfigurationServices)
@@ -66,6 +92,46 @@ public static class Program
             });
 
         services.Configure<KademliaConfig>(context.Configuration.GetSection("Kademlia"));
+        // 获取全部 StartUp 特性类并实例化
+        var startUps = from assembly in _assemblies
+            from type in assembly.GetTypes()
+            where type is { IsAbstract: false, IsInterface: false, IsPublic: true }
+                  && type.GetCustomAttribute<StartUpAttribute>() is not null
+                  && type.GetConstructor(BindingFlags.Public | BindingFlags.Instance, []) is not null
+            select Activator.CreateInstance(type);
+        foreach (var startUp in startUps)
+        {
+            // invoke ConfigurationServices Method, with HostBuilderContext and IServiceCollection
+            var type = startUp.GetType();
+            var methodInfo = type.GetMethod("ConfigurationServices", BindingFlags.Public | BindingFlags.Instance);
+            if (methodInfo is null) continue;
+            var parameters = methodInfo.GetParameters();
+            if (parameters.Length <= 0)
+            {
+                methodInfo.Invoke(startUp, null);
+                continue;
+            }
+
+            object?[] parameterValues = new object[parameters.Length];
+            for (var i = 0; i < parameters.Length; i++)
+            {
+                if (parameters[i].ParameterType == typeof(HostBuilderContext))
+                {
+                    parameterValues[i] = context;
+                    continue;
+                }
+
+                if (parameters[i].ParameterType == typeof(IServiceCollection))
+                {
+                    parameterValues[i] = services;
+                    continue;
+                }
+
+                parameterValues[i] = null;
+            }
+
+            methodInfo.Invoke(startUp, parameterValues);
+        }
     }
 
     private static Action<HostBuilderContext, ILoggingBuilder> ConfigurationLoggingBuilder(LogFactory factory)
@@ -78,7 +144,7 @@ public static class Program
         };
     }
 
-    private static Action<HostBuilderContext, ContainerBuilder> LoadAssemblies(Logger logger)
+    private static Action<HostBuilderContext, ContainerBuilder> RegisterAssemblies(Logger logger)
     {
         return (ctx, builder) =>
         {
@@ -92,31 +158,14 @@ public static class Program
                 .As<IInterceptor>()
                 .Named("ExceptionInterceptor", typeof(IInterceptor))
                 .PropertiesAutowired();
-            var environment = ctx.HostingEnvironment;
-            var contents = environment.ContentRootFileProvider.GetDirectoryContents("plugins");
-            List<Assembly> allAssembly = [typeof(Program).Assembly];
-            List<Type> totalTypes = [];
-            if (contents is { Exists: true })
-            {
-                foreach (var file in contents)
-                {
-                    if (file is not { Exists: true, IsDirectory: false, PhysicalPath: not null or "" }) continue;
-                    try
-                    {
-                        allAssembly.Add(Assembly.LoadFrom(file.PhysicalPath));
-                    }
-                    catch (Exception e)
-                    {
-                        logger.Log(LogLevel.Error, e, "Error loading assembly {physicalPath}", file.PhysicalPath);
-                        continue;
-                    }
-                }
-            }
 
-            builder.RegisterAssemblyModules(allAssembly.ToArray());
-            allAssembly.ForEach(p => totalTypes.AddRange(from pt in p.GetTypes()
-                where pt is { IsAbstract: false, IsInterface: false, IsPublic: true }
-                select pt));
+            builder.RegisterAssemblyModules(_assemblies);
+
+            var totalTypes = from assembly in _assemblies
+                from type in assembly.GetTypes()
+                where type is { IsAbstract: false, IsInterface: false, IsPublic: true }
+                select type;
+
             foreach (var type in totalTypes)
             {
                 var attribute = type.GetCustomAttribute<ServiceAttribute>();

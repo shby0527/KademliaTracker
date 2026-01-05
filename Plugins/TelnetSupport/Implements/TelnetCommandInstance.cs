@@ -1,9 +1,10 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Umi.Dht.Client.Attributes;
+using Umi.Dht.Client.Commands;
 using Umi.Dht.Client.Operator;
 
-namespace Umi.Dht.Client.Commands;
+namespace Umi.Dht.Client.Telnet.Implements;
 
 [Service(ServiceScope.Singleton)]
 public sealed class TelnetCommandInstance : ICommandOperator

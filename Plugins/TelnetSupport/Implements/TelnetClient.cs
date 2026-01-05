@@ -3,8 +3,9 @@ using System.Net.Sockets;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Umi.Dht.Client.Operator;
 
-namespace Umi.Dht.Client.Operator;
+namespace Umi.Dht.Client.Telnet.Implements;
 
 public class TelnetClient(Socket socket, IServiceProvider provider)
 {
