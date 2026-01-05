@@ -50,7 +50,7 @@ public class TelnetCommandWorker(
             return;
         }
 
-        TelnetClient client = new(args.AcceptSocket, provider);
+        TelnetClient client = new(args.AcceptSocket, provider, options.Value);
         client.ClientClose += this.OnClientClose;
         _clients.Add(client);
         client.Start();
