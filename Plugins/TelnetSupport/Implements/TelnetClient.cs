@@ -26,13 +26,13 @@ public class TelnetClient(Socket socket, IServiceProvider provider, TelnetOption
 
     private const byte IAC = 0xFF;
 
-    private const byte WILL = 251;
+    private const byte WILL = 0xFC;
 
-    private const byte WONT = 252;
+    private const byte WONT = 0xFB;
 
-    private const byte DO = 253;
+    private const byte DO = 0xFD;
 
-    private const byte DONT = 254;
+    private const byte DONT = 0xFE;
 
     private const byte ECHO = 0x1;
 
@@ -44,7 +44,7 @@ public class TelnetClient(Socket socket, IServiceProvider provider, TelnetOption
         // start client
         if (socket.Connected)
         {
-            _thread = new Thread(() => this.Process().RunSynchronously())
+            _thread = new Thread(() => this.Process().ConfigureAwait(false).GetAwaiter().GetResult())
             {
                 Name = "command reader"
             };
@@ -108,20 +108,19 @@ public class TelnetClient(Socket socket, IServiceProvider provider, TelnetOption
             if (result.Buffer.FirstSpan[0] == IAC)
             {
                 // 处理IAC 
-                await ProcessIac(reader);
+                await ProcessIac(result);
                 continue;
             }
 
             // 普通命令
-            await ProcessNormal(reader);
+            await ProcessNormal(result);
         }
 
         await reader.CompleteAsync();
     }
 
-    private async Task<string> ReadLineText(PipeReader reader, Encoding encoding)
+    private async Task<string> ReadLineText(ReadResult result, Encoding encoding)
     {
-        var result = await reader.ReadAsync();
         var sequence = result.Buffer;
         var position = 0;
         byte latest = 0;
@@ -145,44 +144,47 @@ public class TelnetClient(Socket socket, IServiceProvider provider, TelnetOption
                 }
             }
 
-            result = await reader.ReadAsync();
+            _pipe.Reader.AdvanceTo(result.Buffer.Start, result.Buffer.End);
+            result = await _pipe.Reader.ReadAsync();
             sequence = result.Buffer;
         }
 
         SEQ_EACH_END:
         var data = new byte[position];
         sequence.Slice(sequence.Start, position).CopyTo(data);
-        SequencePosition end = sequence.GetPosition(position);
-        reader.AdvanceTo(end);
-        return encoding.GetString(data);
+        var end = sequence.GetPosition(position);
+        _pipe.Reader.AdvanceTo(end);
+        return encoding.GetString(data).TrimEnd('\r', '\n');
     }
 
-    private async Task ProcessNormal(PipeReader reader)
+    private async Task ProcessNormal(ReadResult result)
     {
         if (!_auth)
         {
             // 优先 认证逻辑
-            var username = await ReadLineText(reader, Encoding.UTF8);
+            var username = await ReadLineText(result, Encoding.UTF8);
             await socket.SendAsync("Password:"u8.ToArray());
             SendOption(WONT, ECHO);
-            var password = await ReadLineText(reader, Encoding.UTF8);
+            await ProcessIac(await _pipe.Reader.ReadAsync());
+            var password = await ReadLineText(await _pipe.Reader.ReadAsync(), Encoding.UTF8);
             SendOption(WILL, ECHO);
+            await ProcessIac(await _pipe.Reader.ReadAsync());
             if (options.Users.TryGetValue(username, out var pwd))
             {
                 if (pwd == password)
                 {
                     _auth = true;
                     _username = username;
-                    await socket.SendAsync("Kad:>"u8.ToArray());
+                    await socket.SendAsync("\r\nKad:>"u8.ToArray());
                     return;
                 }
 
-                await socket.SendAsync("username or password incorrect\r\nUsername:"u8.ToArray());
+                await socket.SendAsync("\r\nusername or password incorrect\r\nUsername:"u8.ToArray());
                 return;
             }
         }
 
-        var cmd = await ReadLineText(reader, Encoding.UTF8);
+        var cmd = await ReadLineText(result, Encoding.UTF8);
         if (string.IsNullOrEmpty(cmd)) return;
         var split = cmd.Split();
         var commandOperator = provider.GetRequiredService<ICommandOperator>();
@@ -207,9 +209,14 @@ public class TelnetClient(Socket socket, IServiceProvider provider, TelnetOption
     }
 
 
-    private async Task ProcessIac(PipeReader reader)
+    private async Task ProcessIac(ReadResult result)
     {
-        var result = await reader.ReadAtLeastAsync(3);
+        if (result.Buffer.Length < 3)
+        {
+            _pipe.Reader.AdvanceTo(result.Buffer.Start, result.Buffer.End);
+            result = await _pipe.Reader.ReadAtLeastAsync(3);
+        }
+
         // IAC
         _logger.LogDebug("processing IAC cmd");
         var sequence = result.Buffer;
@@ -217,7 +224,7 @@ public class TelnetClient(Socket socket, IServiceProvider provider, TelnetOption
         sequence.Slice(sequence.Start, 3).CopyTo(buffer);
         _logger.LogDebug("IAC cmd,{op} {cmd}", buffer[1], buffer[2]);
         var position = sequence.GetPosition(3);
-        reader.AdvanceTo(position);
+        _pipe.Reader.AdvanceTo(position);
     }
 
 
