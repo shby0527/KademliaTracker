@@ -5,11 +5,11 @@ namespace Umi.Dht.Control.Protocol.Pack;
 
 public readonly struct AuthPayload
 {
-    public ushort UserNameLength { get; init; }
+    public ushort UserNameLength { get; private init; }
 
     public required string UserName { get; init; }
 
-    public ushort PasswordLength { get; init; }
+    public ushort PasswordLength { get; private init; }
 
     public required string Password { get; init; }
 
