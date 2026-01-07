@@ -57,4 +57,20 @@ public class PackageTest
         BasePack.Decode(encode, out var result);
         Debug.Assert(basePack.Session.SequenceEqual(result.Session));
     }
+
+    [Test]
+    public void TestAuthResponse()
+    {
+        var s = new AuthResponse()
+        {
+            Result = AuthResponse.GetErrorCode(false, 0x123456),
+            Error = "abcde"
+        };
+        Debug.Assert(!s.IsSuccess(), "success compute error");
+        Debug.Assert(s.ErrorCode() == 0x123456, "error code error");
+        var data = s.Encode(Encoding.ASCII);
+        var p = AuthResponse.Decode(data, Encoding.ASCII);
+        Debug.Assert(p.Result == s.Result, "result code error");
+        Debug.Assert(p.Error == s.Error, "error message error");
+    }
 }

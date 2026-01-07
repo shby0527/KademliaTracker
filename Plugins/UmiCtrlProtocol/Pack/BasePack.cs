@@ -44,7 +44,9 @@ public readonly struct BasePack
             fixed (byte* ptr = data)
             {
                 result = Marshal.PtrToStructure<BasePack>(new IntPtr(ptr));
-                return result.Magic != Constants.MAGIC ? throw new FormatException("Magic Error") : true;
+                if (result.Magic != Constants.MAGIC) throw new FormatException("Magic Error");
+                if (result.Version > Constants.VERSION) throw new FormatException("Version unmatched");
+                return true;
             }
         }
     }
