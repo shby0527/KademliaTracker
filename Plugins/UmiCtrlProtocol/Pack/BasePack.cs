@@ -22,12 +22,12 @@ public readonly struct BasePack
 
     // payload data
 
-    public ReadOnlySpan<byte> Encode()
+    public ReadOnlyMemory<byte> Encode()
     {
-        Span<byte> buffer = new byte[Marshal.SizeOf<BasePack>()];
+        Memory<byte> buffer = new byte[Marshal.SizeOf<BasePack>()];
         unsafe
         {
-            fixed (byte* ptr = buffer)
+            fixed (byte* ptr = buffer.Span)
             {
                 Marshal.StructureToPtr(this, new IntPtr(ptr), false);
             }
@@ -36,12 +36,12 @@ public readonly struct BasePack
         return buffer;
     }
 
-    public static bool Decode(ReadOnlySpan<byte> data, out BasePack result)
+    public static bool Decode(ReadOnlyMemory<byte> data, out BasePack result)
     {
         if (data.Length < Marshal.SizeOf<BasePack>()) throw new FormatException("Base Package Length Error");
         unsafe
         {
-            fixed (byte* ptr = data)
+            fixed (byte* ptr = data.Span)
             {
                 result = Marshal.PtrToStructure<BasePack>(new IntPtr(ptr));
                 if (result.Magic != Constants.MAGIC) throw new FormatException("Magic Error");

@@ -18,6 +18,9 @@ public static class Constants
 
     public const byte AUTH_RESPONSE = 0x02;
 
+    // length is 0, server will ignore length
+    public const byte HANDSHAKE = 0x02;
+
     public const byte PING = 0x10;
 
     public const byte PONG = 0x11;
@@ -25,4 +28,11 @@ public static class Constants
     public const byte CALL = 0xF0;
 
     public const byte RESPONSE = 0xFA;
+
+    /********************************/
+    // handshake error
+    public const int HANDSHAKE_ERROR_CODE = 0x10_00_01;
+    // require Auth
+    public const int REQUIRE_AUTH_ERROR_CODE = 0x10_00_02;
+    public const int FAILURE_AUTH_ERROR_CODE = 0x10_00_03;
 }

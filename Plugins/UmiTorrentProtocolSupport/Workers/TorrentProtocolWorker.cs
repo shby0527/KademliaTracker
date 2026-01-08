@@ -30,6 +30,11 @@ public sealed class TorrentProtocolWorker(
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (_options is { EnableAuthentication: true, Users: null })
+        {
+            throw new InvalidOperationException("when enable authentication ,Users cannot be null");
+        }
+
         _acceptSocketEventArgs.SetBuffer(new byte[1024]);
         _acceptSocketEventArgs.Completed += this.OnAccept;
         _listenSocket.Bind(new IPEndPoint(IPAddress.Any, _options.Port));
@@ -70,7 +75,7 @@ public sealed class TorrentProtocolWorker(
 
     private void OnClientClose(object? sender, EventArgs e)
     {
-        if (sender is null || sender is not TorrentServerProcessor processor) return;
+        if (sender is not TorrentServerProcessor processor) return;
         lock (_lock)
         {
             _client.Remove(processor);

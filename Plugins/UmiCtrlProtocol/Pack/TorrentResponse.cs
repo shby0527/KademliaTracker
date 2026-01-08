@@ -3,7 +3,7 @@ using System.Text;
 
 namespace Umi.Dht.Control.Protocol.Pack;
 
-public readonly struct AuthResponse
+public readonly struct TorrentResponse
 {
     public required int Result { get; init; }
 
@@ -19,24 +19,24 @@ public readonly struct AuthResponse
         return Result & 0x7F_FF_FF_FF;
     }
 
-    public ReadOnlySpan<byte> Encode(Encoding encoding)
+    public ReadOnlyMemory<byte> Encode(Encoding encoding)
     {
         var errorBytes = encoding.GetBytes(Error);
-        Span<byte> buffer = new byte[8 + errorBytes.Length];
-        BinaryPrimitives.WriteInt32LittleEndian(buffer[..4], Result);
-        BinaryPrimitives.WriteInt32LittleEndian(buffer.Slice(4, 4), errorBytes.Length);
+        Memory<byte> buffer = new byte[8 + errorBytes.Length];
+        BinaryPrimitives.WriteInt32LittleEndian(buffer[..4].Span, Result);
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.Slice(4, 4).Span, errorBytes.Length);
         errorBytes.CopyTo(buffer[8..]);
         return buffer;
     }
 
-    public static AuthResponse Decode(ReadOnlySpan<byte> data, Encoding encoding)
+    public static TorrentResponse Decode(ReadOnlyMemory<byte> data, Encoding encoding)
     {
         if (data.Length < 8) throw new FormatException("data format error");
-        var result = BinaryPrimitives.ReadInt32LittleEndian(data[..4]);
-        var errorLength = BinaryPrimitives.ReadInt32LittleEndian(data.Slice(4, 4));
+        var result = BinaryPrimitives.ReadInt32LittleEndian(data[..4].Span);
+        var errorLength = BinaryPrimitives.ReadInt32LittleEndian(data.Slice(4, 4).Span);
         if (data[8..].Length < errorLength) throw new FormatException("data format error");
-        var error = encoding.GetString(data[8..]);
-        return new AuthResponse
+        var error = encoding.GetString(data[8..].Span);
+        return new TorrentResponse
         {
             Result = result,
             Error = error,

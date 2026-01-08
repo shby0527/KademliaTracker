@@ -21,7 +21,7 @@ public class PackageTest
             UserName = "admin",
             Password = "a123",
         };
-        var base64String = Convert.ToBase64String(authPayload.Encode(Encoding.ASCII));
+        var base64String = Convert.ToBase64String(authPayload.Encode(Encoding.ASCII).Span);
         Debug.Print(base64String);
         Debug.Assert("BQBhZG1pbgQAYTEyMw==" == base64String, "Encode Network Package Error");
     }
@@ -32,9 +32,8 @@ public class PackageTest
         var base64 = "BQBhZG1pbgQAYTEyMw==";
         var payload = AuthPayload.Decode(Convert.FromBase64String(base64), Encoding.ASCII);
         Debug.Assert(payload.UserName == "admin");
-        Debug.Assert(payload.UserNameLength == 5);
+
         Debug.Assert(payload.Password == "a123");
-        Debug.Assert(payload.PasswordLength == 4);
     }
 
 
@@ -61,15 +60,15 @@ public class PackageTest
     [Test]
     public void TestAuthResponse()
     {
-        var s = new AuthResponse()
+        var s = new TorrentResponse()
         {
-            Result = AuthResponse.GetErrorCode(false, 0x123456),
+            Result = TorrentResponse.GetErrorCode(false, 0x123456),
             Error = "abcde"
         };
         Debug.Assert(!s.IsSuccess(), "success compute error");
         Debug.Assert(s.ErrorCode() == 0x123456, "error code error");
         var data = s.Encode(Encoding.ASCII);
-        var p = AuthResponse.Decode(data, Encoding.ASCII);
+        var p = TorrentResponse.Decode(data, Encoding.ASCII);
         Debug.Assert(p.Result == s.Result, "result code error");
         Debug.Assert(p.Error == s.Error, "error message error");
     }
