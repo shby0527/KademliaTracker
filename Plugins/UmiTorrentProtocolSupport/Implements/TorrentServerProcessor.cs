@@ -148,6 +148,7 @@ internal sealed class TorrentServerProcessor : IDisposable, IAsyncDisposable
         }
 
         result.Buffer.Slice(0, (int)pack.Length).CopyTo(buffer.Memory.Span);
+        reader.AdvanceTo(result.Buffer.GetPosition((long)pack.Length));
         var payload = AuthPayload.Decode(buffer.Memory, Encoding.UTF8);
         // all checked, not be null
         if (_options.Users!.TryGetValue(payload.UserName, out var pwd))

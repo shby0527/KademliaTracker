@@ -23,13 +23,9 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private async Task OpenCommandWindows(Window parent, CancellationToken token = default)
     {
-        MessageBoxWindows dialog = new()
+        Window dialog = new NetworkTorrentControl()
         {
-            DataContext = new MessageBoxViewModel
-            {
-                Title = "提示",
-                Message = "暂时没有实现"
-            }
+            DataContext = new NetworkTorrentControlViewModel()
         };
         await dialog.ShowDialog<int>(parent);
     }

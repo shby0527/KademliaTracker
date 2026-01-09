@@ -1,0 +1,53 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:TorrentFileDecoder.ViewModels"
+        xmlns:ctr="using:TorrentFileDecoder.Converters"
+        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+        Width="1200" Height="800"
+        CanMaximize="False" CanResize="False"
+        x:Class="TorrentFileDecoder.Views.NetworkTorrentControl"
+        x:DataType="vm:NetworkTorrentControlViewModel"
+        Title="Kademlia控制台">
+
+    <Design.DataContext>
+        <vm:NetworkTorrentControlViewModel>
+            <vm:NetworkTorrentControlViewModel.Address>127.0.0.1</vm:NetworkTorrentControlViewModel.Address>
+            <vm:NetworkTorrentControlViewModel.Port>32768</vm:NetworkTorrentControlViewModel.Port>
+            <vm:NetworkTorrentControlViewModel.IsConnected>False</vm:NetworkTorrentControlViewModel.IsConnected>
+            <vm:NetworkTorrentControlViewModel.IsConnecting>True</vm:NetworkTorrentControlViewModel.IsConnecting>
+            <vm:NetworkTorrentControlViewModel.ConnectionStatus>断开连接</vm:NetworkTorrentControlViewModel.ConnectionStatus>
+        </vm:NetworkTorrentControlViewModel>
+    </Design.DataContext>
+
+    <Window.Resources>
+        <ctr:LogicalOrConverter x:Key="LogicalOrConverter" />
+    </Window.Resources>
+
+    <StackPanel Width="1200" Height="40" Orientation="Horizontal" VerticalAlignment="Top" Margin="10">
+        <Label Content="地址" VerticalContentAlignment="Center" Margin="5 0 0 0" />
+        <TextBox Width="240"
+                 Text="{Binding Address}"
+                 VerticalContentAlignment="Center"
+                 IsEnabled="{Binding !IsConnected, Mode=OneWay}"
+                 Margin="5 0 0 0" />
+        <Label Content="端口号" VerticalContentAlignment="Center" Margin="5 0 0 0" />
+        <TextBox Width="120"
+                 Text="{Binding Port}"
+                 VerticalContentAlignment="Center"
+                 IsEnabled="{Binding !IsConnected, Mode=OneWay}"
+                 Margin="5 0 0 0" />
+        <Button Content="连接" Margin="5 0 0 0" Command="{Binding ConnectCommand}">
+            <Button.IsEnabled>
+                <MultiBinding Mode="OneWay" Converter="{StaticResource LogicalOrConverter}">
+                    <Binding Path="IsConnected" Mode="OneWay" />
+                    <Binding Path="!IsConnecting" Mode="OneWay" />
+                </MultiBinding>
+            </Button.IsEnabled>
+        </Button>
+        <Label Margin="10 0 0 0"
+               Content="{Binding ConnectionStatus}"
+               VerticalContentAlignment="Center" />
+    </StackPanel>
+</Window>

@@ -35,7 +35,6 @@ public sealed class TorrentProtocolWorker(
             throw new InvalidOperationException("when enable authentication ,Users cannot be null");
         }
 
-        _acceptSocketEventArgs.SetBuffer(new byte[1024]);
         _acceptSocketEventArgs.Completed += this.OnAccept;
         _listenSocket.Bind(new IPEndPoint(IPAddress.Any, _options.Port));
         _listenSocket.Listen(10);

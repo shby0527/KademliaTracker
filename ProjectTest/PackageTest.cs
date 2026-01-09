@@ -72,4 +72,9 @@ public class PackageTest
         Debug.Assert(p.Result == s.Result, "result code error");
         Debug.Assert(p.Error == s.Error, "error message error");
     }
+
+    [Test]
+    public void ArrayTest()
+    {
+    }
 }
