@@ -4,6 +4,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:TorrentFileDecoder.ViewModels"
         xmlns:ctr="using:TorrentFileDecoder.Converters"
+        xmlns:mo="using:TorrentFileDecoder.Models"
         mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
         Width="1200" Height="800"
         CanMaximize="False" CanResize="False"
@@ -13,28 +14,41 @@
 
     <Design.DataContext>
         <vm:NetworkTorrentControlViewModel>
-            <vm:NetworkTorrentControlViewModel.Address>127.0.0.1</vm:NetworkTorrentControlViewModel.Address>
-            <vm:NetworkTorrentControlViewModel.Port>32768</vm:NetworkTorrentControlViewModel.Port>
+            <vm:NetworkTorrentControlViewModel.ServerEndpointModule>
+                <mo:ServerEndpointModule>
+                    <mo:ServerEndpointModule.Address>127.0.0.1</mo:ServerEndpointModule.Address>
+                    <mo:ServerEndpointModule.Port>32768</mo:ServerEndpointModule.Port>
+                </mo:ServerEndpointModule>
+            </vm:NetworkTorrentControlViewModel.ServerEndpointModule>
             <vm:NetworkTorrentControlViewModel.IsConnected>False</vm:NetworkTorrentControlViewModel.IsConnected>
             <vm:NetworkTorrentControlViewModel.IsConnecting>True</vm:NetworkTorrentControlViewModel.IsConnecting>
             <vm:NetworkTorrentControlViewModel.ConnectionStatus>断开连接</vm:NetworkTorrentControlViewModel.ConnectionStatus>
+            <vm:NetworkTorrentControlViewModel.RequireAuthentication>True</vm:NetworkTorrentControlViewModel.RequireAuthentication>
+            <vm:NetworkTorrentControlViewModel.UserInfoModule>
+                <mo:UserInfoModule>
+                    <mo:UserInfoModule.Username>aaaaaa</mo:UserInfoModule.Username>
+                    <mo:UserInfoModule.Password>bbbbb</mo:UserInfoModule.Password>
+                    <mo:UserInfoModule.Authenticated>False</mo:UserInfoModule.Authenticated>
+                </mo:UserInfoModule>
+            </vm:NetworkTorrentControlViewModel.UserInfoModule>
         </vm:NetworkTorrentControlViewModel>
     </Design.DataContext>
 
     <Window.Resources>
         <ctr:LogicalOrConverter x:Key="LogicalOrConverter" />
+        <ctr:LogicalXorConverter x:Key="LogicalXorConverter" />
     </Window.Resources>
 
     <StackPanel Width="1200" Height="40" Orientation="Horizontal" VerticalAlignment="Top" Margin="10">
         <Label Content="地址" VerticalContentAlignment="Center" Margin="5 0 0 0" />
         <TextBox Width="240"
-                 Text="{Binding Address}"
+                 Text="{Binding ServerEndpointModule.Address}"
                  VerticalContentAlignment="Center"
                  IsEnabled="{Binding !IsConnected, Mode=OneWay}"
                  Margin="5 0 0 0" />
         <Label Content="端口号" VerticalContentAlignment="Center" Margin="5 0 0 0" />
         <TextBox Width="120"
-                 Text="{Binding Port}"
+                 Text="{Binding ServerEndpointModule.Port}"
                  VerticalContentAlignment="Center"
                  IsEnabled="{Binding !IsConnected, Mode=OneWay}"
                  Margin="5 0 0 0" />
@@ -49,5 +63,32 @@
         <Label Margin="10 0 0 0"
                Content="{Binding ConnectionStatus}"
                VerticalContentAlignment="Center" />
+        <CheckBox Content="需要认证" Margin="5 0 0 0"
+                  IsChecked="{Binding RequireAuthentication, Mode=TwoWay}" />
+        <Label Margin="5 0 0 0" Content="用户名" VerticalContentAlignment="Center" />
+        <TextBox Margin="5 0 0 0"
+                 VerticalContentAlignment="Center"
+                 Width="150"
+                 MaxLength="20"
+                 Text="{Binding UserInfoModule.Username}"
+                 IsEnabled="{Binding RequireAuthentication, Mode=OneWay}" />
+        <Label Margin="5 0 0 0" Content="密码" VerticalContentAlignment="Center" />
+        <TextBox Margin="5 0 0 0"
+                 VerticalContentAlignment="Center"
+                 PasswordChar="*"
+                 Width="150"
+                 Text="{Binding UserInfoModule.Password}"
+                 MaxLength="20"
+                 IsEnabled="{Binding RequireAuthentication, Mode=OneWay}" />
+        <Button Content="认证"
+                Margin="5 0 0 0"
+                VerticalContentAlignment="Center">
+            <Button.IsEnabled>
+                <MultiBinding Mode="OneWay" Converter="{StaticResource LogicalXorConverter}">
+                    <Binding Path="RequireAuthentication" Mode="OneWay" />
+                    <Binding Path="UserInfoModule.Authenticated" Mode="OneWay" />
+                </MultiBinding>
+            </Button.IsEnabled>
+        </Button>
     </StackPanel>
 </Window>
