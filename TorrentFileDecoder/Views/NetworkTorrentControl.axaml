@@ -10,6 +10,8 @@
         CanMaximize="False" CanResize="False"
         x:Class="TorrentFileDecoder.Views.NetworkTorrentControl"
         x:DataType="vm:NetworkTorrentControlViewModel"
+        Name="KademliaWindowRef"
+        Closed="TopLevel_OnClosed"
         Title="Kademlia控制台">
 
     <Design.DataContext>
@@ -42,17 +44,20 @@
     <StackPanel Width="1200" Height="40" Orientation="Horizontal" VerticalAlignment="Top" Margin="10">
         <Label Content="地址" VerticalContentAlignment="Center" Margin="5 0 0 0" />
         <TextBox Width="240"
-                 Text="{Binding ServerEndpointModule.Address}"
                  VerticalContentAlignment="Center"
+                 Text="{Binding ServerEndpointModule.Address}"
                  IsEnabled="{Binding !IsConnected, Mode=OneWay}"
-                 Margin="5 0 0 0" />
+                 Margin="5 0 0 0">
+        </TextBox>
         <Label Content="端口号" VerticalContentAlignment="Center" Margin="5 0 0 0" />
         <TextBox Width="120"
                  Text="{Binding ServerEndpointModule.Port}"
                  VerticalContentAlignment="Center"
                  IsEnabled="{Binding !IsConnected, Mode=OneWay}"
                  Margin="5 0 0 0" />
-        <Button Content="连接" Margin="5 0 0 0" Command="{Binding ConnectCommand}">
+        <Button Content="连接" Margin="5 0 0 0"
+                Command="{Binding ConnectCommand}"
+                CommandParameter="{Binding #KademliaWindowRef}">
             <Button.IsEnabled>
                 <MultiBinding Mode="OneWay" Converter="{StaticResource LogicalOrConverter}">
                     <Binding Path="IsConnected" Mode="OneWay" />
@@ -82,7 +87,8 @@
                  IsEnabled="{Binding RequireAuthentication, Mode=OneWay}" />
         <Button Content="认证"
                 Margin="5 0 0 0"
-                VerticalContentAlignment="Center">
+                VerticalContentAlignment="Center"
+                Command="{Binding AuthenticationCommand}">
             <Button.IsEnabled>
                 <MultiBinding Mode="OneWay" Converter="{StaticResource LogicalXorConverter}">
                     <Binding Path="RequireAuthentication" Mode="OneWay" />

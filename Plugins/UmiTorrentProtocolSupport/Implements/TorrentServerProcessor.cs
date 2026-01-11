@@ -237,8 +237,8 @@ internal sealed class TorrentServerProcessor : IDisposable, IAsyncDisposable
         memory.CopyTo(buffer);
         writer.Advance(args.BytesTransferred);
         var task = writer.FlushAsync().AsTask();
-        task.ContinueWith(_ => _logger.LogTrace("flushed"));
-        this.BeginReceived();
+        task.ContinueWith(_ => this.BeginReceived())
+            .ContinueWith(_ => _logger.LogTrace("flushed"));
     }
 
     public void Dispose()

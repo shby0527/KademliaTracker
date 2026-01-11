@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Dynamic;
 using System.Runtime.InteropServices;
 using System.Text;
 using Umi.Dht.Control.Protocol;
@@ -76,5 +77,6 @@ public class PackageTest
     [Test]
     public void ArrayTest()
     {
+    
     }
 }
