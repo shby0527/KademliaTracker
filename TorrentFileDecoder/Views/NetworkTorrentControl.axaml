@@ -23,8 +23,7 @@
                 </mo:ServerEndpointModule>
             </vm:NetworkTorrentControlViewModel.ServerEndpointModule>
             <vm:NetworkTorrentControlViewModel.IsConnected>False</vm:NetworkTorrentControlViewModel.IsConnected>
-            <vm:NetworkTorrentControlViewModel.IsConnecting>True</vm:NetworkTorrentControlViewModel.IsConnecting>
-            <vm:NetworkTorrentControlViewModel.ConnectionStatus>断开连接</vm:NetworkTorrentControlViewModel.ConnectionStatus>
+            <vm:NetworkTorrentControlViewModel.IsConnecting>False</vm:NetworkTorrentControlViewModel.IsConnecting>
             <vm:NetworkTorrentControlViewModel.RequireAuthentication>True</vm:NetworkTorrentControlViewModel.RequireAuthentication>
             <vm:NetworkTorrentControlViewModel.UserInfoModule>
                 <mo:UserInfoModule>
@@ -59,15 +58,15 @@
                 Command="{Binding ConnectCommand}"
                 CommandParameter="{Binding #KademliaWindowRef}">
             <Button.IsEnabled>
-                <MultiBinding Mode="OneWay" Converter="{StaticResource LogicalOrConverter}">
+                <MultiBinding Mode="OneWay" Converter="{StaticResource LogicalXorConverter}">
                     <Binding Path="IsConnected" Mode="OneWay" />
                     <Binding Path="!IsConnecting" Mode="OneWay" />
                 </MultiBinding>
             </Button.IsEnabled>
         </Button>
         <Label Margin="10 0 0 0"
-               Content="{Binding ConnectionStatus}"
-               VerticalContentAlignment="Center" />
+               VerticalContentAlignment="Center"
+               Content="{Binding ConnectionStatus}" />
         <CheckBox Content="需要认证" Margin="5 0 0 0"
                   IsChecked="{Binding RequireAuthentication, Mode=TwoWay}" />
         <Label Margin="5 0 0 0" Content="用户名" VerticalContentAlignment="Center" />

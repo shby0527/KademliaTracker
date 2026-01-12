@@ -19,10 +19,28 @@ public partial class NetworkTorrentControlViewModel : ViewModelBase
 
     [ObservableProperty] private bool _requireAuthentication;
 
-    [ObservableProperty] private string _connectionStatus = "未连接";
-
     [ObservableProperty] private UserInfoModule _userInfoModule = new();
 
+
+    public string ConnectionStatus
+    {
+        get
+        {
+            if (IsConnecting) return "正在连接";
+            if (IsConnected) return "已连接";
+            return "未连接";
+        }
+    }
+
+    partial void OnIsConnectedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ConnectionStatus));
+    }
+
+    partial void OnIsConnectingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ConnectionStatus));
+    }
 
     private TorrentProtocol? _protocol;
 
@@ -45,8 +63,43 @@ public partial class NetworkTorrentControlViewModel : ViewModelBase
             return;
         }
 
+        IsConnecting = true;
         _protocol = new TorrentProtocol(address, ServerEndpointModule.Port);
+        _protocol.HandshakeComplete += ProtocolOnHandshakeComplete;
+        _protocol.Closed += ProtocolOnClosed;
         await _protocol.ConnectAsync();
+        IsConnecting = false;
+    }
+
+    private void ProtocolOnClosed(object? sender, EventArgs e)
+    {
+        if (sender is TorrentProtocol protocol)
+        {
+            protocol.Dispose();
+            _protocol = null;
+            IsConnected = false;
+        }
+    }
+
+    private void ProtocolOnHandshakeComplete(object? sender, HandshakeCompleteEventArg args)
+    {
+        if (!args.Success)
+        {
+            MessageBoxWindows win = new()
+            {
+                DataContext = new MessageBoxViewModel()
+                {
+                    Title = "Error",
+                    Message = args.Message ?? "错误"
+                }
+            };
+            win.Show();
+            if (sender is TorrentProtocol protocol) protocol.Dispose();
+            _protocol = null;
+            return;
+        }
+
+        IsConnected = true;
     }
 
     [RelayCommand]

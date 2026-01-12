@@ -30,6 +30,8 @@ public sealed class TorrentProtocol : IDisposable
 
     public event EventHandler<HandshakeCompleteEventArg>? HandshakeComplete;
 
+    public event EventHandler? Closed;
+
     public bool HandshakeCompleted { get; private set; }
 
     public TorrentProtocol(IPAddress address, int port)
@@ -59,7 +61,8 @@ public sealed class TorrentProtocol : IDisposable
             Length = 0
         };
         await _socket.SendAsync(pack.Encode(), token);
-        this.BeginReceive();
+        if (!_socket.ReceiveAsync(_receiveEventArgs))
+            ThreadPool.QueueUserWorkItem(_ => this.OnReceive(_socket, _receiveEventArgs));
         var p = new Thread(this.Process)
         {
             Name = "Background Process",
@@ -110,21 +113,11 @@ public sealed class TorrentProtocol : IDisposable
         HandshakeComplete?.Invoke(this, new HandshakeCompleteEventArg(response.IsSuccess(), response.Error));
     }
 
-
-    private void BeginReceive()
-    {
-        if (!_socket.ReceiveAsync(_receiveEventArgs))
-        {
-            ThreadPool.QueueUserWorkItem(_ => this.OnReceive(_socket, _receiveEventArgs));
-        }
-    }
-
     private void OnReceive(object? sender, SocketAsyncEventArgs e)
     {
-        if (e is not { SocketError: SocketError.Success, BytesTransferred: <= 0 })
+        if (e is not { SocketError: SocketError.Success, BytesTransferred: > 0 })
         {
-            _socket.Shutdown(SocketShutdown.Both);
-            _socket.Close();
+            Closed?.Invoke(this, EventArgs.Empty);
             return;
         }
 
@@ -134,12 +127,22 @@ public sealed class TorrentProtocol : IDisposable
         writer.Advance(e.BytesTransferred);
         writer.FlushAsync()
             .AsTask()
-            .ContinueWith(_ => this.BeginReceive());
+            .ContinueWith(_ =>
+            {
+                if (_socket.ReceiveAsync(_receiveEventArgs)) return;
+                ThreadPool.QueueUserWorkItem(_ => this.OnReceive(_socket, _receiveEventArgs));
+            });
     }
 
 
     public void Dispose()
     {
+        if (_socket.Connected)
+        {
+            _socket.Shutdown(SocketShutdown.Both);
+            _socket.Close();
+        }
+
         _socket.Dispose();
         _receiveEventArgs.Dispose();
     }
