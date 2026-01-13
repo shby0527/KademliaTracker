@@ -17,7 +17,7 @@ public partial class NetworkTorrentControl : Window
     {
         if (this.DataContext is NetworkTorrentControlViewModel viewModel)
         {
-            viewModel.OnWindowClosed(sender, e);
+            viewModel.WindowClosedCommand.Execute(null);
         }
     }
 }

@@ -1,0 +1,57 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:TorrentFileDecoder.ViewModels"
+        xmlns:mo="using:TorrentFileDecoder.Models"
+        mc:Ignorable="d" d:DesignWidth="480" d:DesignHeight="220"
+        Width="480" Height="220" CanMaximize="False" CanMinimize="False" CanResize="False"
+        x:Class="TorrentFileDecoder.Views.Authentication"
+        x:DataType="vm:NetworkTorrentControlViewModel"
+        Name="AuthRef"
+        Title="登陆">
+
+    <Design.DataContext>
+        <vm:NetworkTorrentControlViewModel>
+            <vm:NetworkTorrentControlViewModel.UserInfoModule>
+                <mo:UserInfoModule Authenticated="False" Username="123456" Password="123abc" />
+            </vm:NetworkTorrentControlViewModel.UserInfoModule>
+        </vm:NetworkTorrentControlViewModel>
+    </Design.DataContext>
+
+    <StackPanel Orientation="Vertical" Margin="35">
+        <StackPanel Orientation="Horizontal">
+            <TextBlock Width="50" Text="用户名" TextAlignment="Justify" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <TextBox Width="350"
+                     Text="{Binding UserInfoModule.Username}"
+                     VerticalContentAlignment="Center"
+                     Margin="10 0 0 0" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Margin="0 10 0 0">
+            <TextBlock Width="50" Text="密    码"
+                       VerticalAlignment="Center"
+                       TextAlignment="Justify"
+                       TextWrapping="Wrap" />
+            <TextBox Width="350"
+                     Text="{Binding UserInfoModule.Password}"
+                     PasswordChar="*"
+                     VerticalContentAlignment="Center"
+                     Margin="10 0 0 0" />
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Margin="0 50 0 0">
+            <Button Content="登陆"
+                    Width="150"
+                    HorizontalContentAlignment="Center"
+                    Command="{Binding AuthenticationCommand}"
+                    CommandParameter="{Binding #AuthRef}" />
+            <Button Content="取消"
+                    Width="150"
+                    HorizontalContentAlignment="Center"
+                    Command="{Binding CancelCommand}"
+                    CommandParameter="{Binding #AuthRef}"
+                    HorizontalAlignment="Right"
+                    Margin="100 0 0 0" />
+        </StackPanel>
+    </StackPanel>
+</Window>

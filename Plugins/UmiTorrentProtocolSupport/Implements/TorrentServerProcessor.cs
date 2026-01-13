@@ -200,7 +200,8 @@ internal sealed class TorrentServerProcessor : IDisposable, IAsyncDisposable
 
         _session = pack.Session;
         _handshakeComplete = true;
-        return await SendTorrentResponse(Constants.HANDSHAKE, 0, "OK", token);
+        return await SendTorrentResponse(Constants.HANDSHAKE,
+            _options.EnableAuthentication ? Constants.REQUIRE_AUTH_ERROR_CODE : 0, "OK", token);
     }
 
     private void BeginReceived()

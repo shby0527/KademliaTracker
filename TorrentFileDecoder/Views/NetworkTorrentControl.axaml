@@ -10,7 +10,6 @@
         CanMaximize="False" CanResize="False"
         x:Class="TorrentFileDecoder.Views.NetworkTorrentControl"
         x:DataType="vm:NetworkTorrentControlViewModel"
-        Name="KademliaWindowRef"
         Closed="TopLevel_OnClosed"
         Title="Kademlia控制台">
 
@@ -24,7 +23,7 @@
             </vm:NetworkTorrentControlViewModel.ServerEndpointModule>
             <vm:NetworkTorrentControlViewModel.IsConnected>False</vm:NetworkTorrentControlViewModel.IsConnected>
             <vm:NetworkTorrentControlViewModel.IsConnecting>False</vm:NetworkTorrentControlViewModel.IsConnecting>
-            <vm:NetworkTorrentControlViewModel.RequireAuthentication>True</vm:NetworkTorrentControlViewModel.RequireAuthentication>
+            <vm:NetworkTorrentControlViewModel.IsAuthentication>True</vm:NetworkTorrentControlViewModel.IsAuthentication>
             <vm:NetworkTorrentControlViewModel.UserInfoModule>
                 <mo:UserInfoModule>
                     <mo:UserInfoModule.Username>aaaaaa</mo:UserInfoModule.Username>
@@ -55,8 +54,7 @@
                  IsEnabled="{Binding !IsConnected, Mode=OneWay}"
                  Margin="5 0 0 0" />
         <Button Content="连接" Margin="5 0 0 0"
-                Command="{Binding ConnectCommand}"
-                CommandParameter="{Binding #KademliaWindowRef}">
+                Command="{Binding ConnectCommand}">
             <Button.IsEnabled>
                 <MultiBinding Mode="OneWay" Converter="{StaticResource LogicalXorConverter}">
                     <Binding Path="IsConnected" Mode="OneWay" />
@@ -67,33 +65,5 @@
         <Label Margin="10 0 0 0"
                VerticalContentAlignment="Center"
                Content="{Binding ConnectionStatus}" />
-        <CheckBox Content="需要认证" Margin="5 0 0 0"
-                  IsChecked="{Binding RequireAuthentication, Mode=TwoWay}" />
-        <Label Margin="5 0 0 0" Content="用户名" VerticalContentAlignment="Center" />
-        <TextBox Margin="5 0 0 0"
-                 VerticalContentAlignment="Center"
-                 Width="150"
-                 MaxLength="20"
-                 Text="{Binding UserInfoModule.Username}"
-                 IsEnabled="{Binding RequireAuthentication, Mode=OneWay}" />
-        <Label Margin="5 0 0 0" Content="密码" VerticalContentAlignment="Center" />
-        <TextBox Margin="5 0 0 0"
-                 VerticalContentAlignment="Center"
-                 PasswordChar="*"
-                 Width="150"
-                 Text="{Binding UserInfoModule.Password}"
-                 MaxLength="20"
-                 IsEnabled="{Binding RequireAuthentication, Mode=OneWay}" />
-        <Button Content="认证"
-                Margin="5 0 0 0"
-                VerticalContentAlignment="Center"
-                Command="{Binding AuthenticationCommand}">
-            <Button.IsEnabled>
-                <MultiBinding Mode="OneWay" Converter="{StaticResource LogicalXorConverter}">
-                    <Binding Path="RequireAuthentication" Mode="OneWay" />
-                    <Binding Path="UserInfoModule.Authenticated" Mode="OneWay" />
-                </MultiBinding>
-            </Button.IsEnabled>
-        </Button>
     </StackPanel>
 </Window>

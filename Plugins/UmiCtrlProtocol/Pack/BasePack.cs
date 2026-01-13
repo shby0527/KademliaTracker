@@ -29,7 +29,7 @@ public readonly struct BasePack
         {
             fixed (byte* ptr = buffer.Span)
             {
-                Marshal.StructureToPtr(this, new IntPtr(ptr), false);
+                Marshal.StructureToPtr(this, new nint(ptr), false);
             }
         }
 
@@ -43,7 +43,7 @@ public readonly struct BasePack
         {
             fixed (byte* ptr = data.Span)
             {
-                result = Marshal.PtrToStructure<BasePack>(new IntPtr(ptr));
+                result = Marshal.PtrToStructure<BasePack>(new nint(ptr));
                 if (result.Magic != Constants.MAGIC) throw new FormatException("Magic Error");
                 if (result.Version > Constants.VERSION) throw new FormatException("Version unmatched");
                 return true;

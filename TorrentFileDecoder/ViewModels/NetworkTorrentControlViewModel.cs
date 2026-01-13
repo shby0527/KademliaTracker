@@ -1,6 +1,8 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TorrentFileDecoder.Models;
@@ -17,9 +19,13 @@ public partial class NetworkTorrentControlViewModel : ViewModelBase
 
     [ObservableProperty] private bool _isConnecting;
 
-    [ObservableProperty] private bool _requireAuthentication;
+    [ObservableProperty] private bool _isAuthentication;
 
     [ObservableProperty] private UserInfoModule _userInfoModule = new();
+
+    private TorrentProtocol? _protocol;
+
+    public required Window View { get; init; }
 
 
     public string ConnectionStatus
@@ -42,11 +48,9 @@ public partial class NetworkTorrentControlViewModel : ViewModelBase
         OnPropertyChanged(nameof(ConnectionStatus));
     }
 
-    private TorrentProtocol? _protocol;
-
 
     [RelayCommand]
-    private async Task OnConnect(Window parent)
+    private async Task OnConnect(CancellationToken token = default)
     {
         if (IsConnected || IsConnecting) return;
         if (!ServerEndpointModule.TryGetAddress(out var address))
@@ -57,9 +61,10 @@ public partial class NetworkTorrentControlViewModel : ViewModelBase
                 {
                     Title = "Error",
                     Message = "无法识别的IP格式"
-                }
+                },
+                WindowStartupLocation = WindowStartupLocation.CenterOwner
             };
-            await win.ShowDialog(parent);
+            await win.ShowDialog(View);
             return;
         }
 
@@ -67,7 +72,7 @@ public partial class NetworkTorrentControlViewModel : ViewModelBase
         _protocol = new TorrentProtocol(address, ServerEndpointModule.Port);
         _protocol.HandshakeComplete += ProtocolOnHandshakeComplete;
         _protocol.Closed += ProtocolOnClosed;
-        await _protocol.ConnectAsync();
+        await _protocol.ConnectAsync(token);
         IsConnecting = false;
     }
 
@@ -85,30 +90,73 @@ public partial class NetworkTorrentControlViewModel : ViewModelBase
     {
         if (!args.Success)
         {
-            MessageBoxWindows win = new()
+            Dispatcher.UIThread.InvokeAsync(async () =>
             {
-                DataContext = new MessageBoxViewModel()
+                var msgBox = new MessageBoxWindows()
                 {
-                    Title = "Error",
-                    Message = args.Message ?? "错误"
-                }
-            };
-            win.Show();
+                    DataContext = new MessageBoxViewModel()
+                    {
+                        Title = "错误",
+                        Message = "握手失败"
+                    }
+                };
+                await msgBox.ShowDialog(View);
+            });
             if (sender is TorrentProtocol protocol) protocol.Dispose();
             _protocol = null;
             return;
         }
 
         IsConnected = true;
+        if (!args.RequireAuthentication)
+        {
+            IsAuthentication = true;
+            return;
+        }
+
+        Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            var auth = new Authentication()
+            {
+                DataContext = this,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner
+            };
+            if (!await auth.ShowDialog<bool>(View))
+            {
+                _protocol?.Dispose();
+                _protocol = null;
+            }
+        });
     }
 
     [RelayCommand]
-    private void OnAuthentication()
+    private async Task OnAuthentication(Window window, CancellationToken token = default)
     {
+        if (_protocol is not null)
+        {
+            await _protocol.SystemAuthenticateAsync(UserInfoModule.Username, UserInfoModule.Password, token);
+        }
+
+        var msgBox = new MessageBoxWindows()
+        {
+            DataContext = new MessageBoxViewModel()
+            {
+                Title = "错误",
+                Message = "没有可用连接"
+            }
+        };
+        await msgBox.ShowDialog(View);
+    }
+
+    [RelayCommand]
+    private void OnCancel(Window window)
+    {
+        window.Close(false);
     }
 
 
-    public void OnWindowClosed(object? sender, EventArgs e)
+    [RelayCommand]
+    private void OnWindowClosed()
     {
         _protocol?.Dispose();
     }

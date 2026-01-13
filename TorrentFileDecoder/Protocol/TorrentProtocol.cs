@@ -16,8 +16,8 @@ namespace TorrentFileDecoder.Protocol;
 
 public sealed class TorrentProtocol : IDisposable
 {
-    private readonly Socket _socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-    private readonly SocketAsyncEventArgs _receiveEventArgs = new SocketAsyncEventArgs();
+    private readonly Socket _socket = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+    private readonly SocketAsyncEventArgs _receiveEventArgs = new();
     private readonly Pipe _pipe = new();
 
     private readonly IPEndPoint _endPoint;
@@ -32,20 +32,40 @@ public sealed class TorrentProtocol : IDisposable
 
     public event EventHandler? Closed;
 
+    public event EventHandler<AuthenticationCompleteEventArg>? AuthenticationComplete;
+
     public bool HandshakeCompleted { get; private set; }
+
+    public bool AuthenticationCompleted { get; private set; }
 
     public TorrentProtocol(IPAddress address, int port)
     {
         _endPoint = new IPEndPoint(address, port);
         _receiveEventArgs.SetBuffer(new byte[4096]);
         _socket.ReceiveBufferSize = 4096;
+        _socket.SendBufferSize = 4096;
         HandshakeCompleted = false;
         _receiveEventArgs.Completed += this.OnReceive;
         _session = Utils.GenerateSession();
         _handlers = new Dictionary<byte, PackageHandler>()
         {
             { Constants.HANDSHAKE, HandshakeHandler },
+            { Constants.AUTH_RESPONSE, AuthenticationResponse }
         }.ToImmutableDictionary();
+    }
+
+
+    private ReadOnlyMemory<byte> CreateBasePackData(byte command, ulong length)
+    {
+        BasePack pack = new()
+        {
+            Magic = Constants.MAGIC,
+            Version = Constants.VERSION,
+            Session = _session.ToArray(),
+            Command = command,
+            Length = length
+        };
+        return pack.Encode();
     }
 
     public async Task ConnectAsync(CancellationToken token = default)
@@ -95,22 +115,56 @@ public sealed class TorrentProtocol : IDisposable
         reader.Complete();
     }
 
+    public async Task SystemAuthenticateAsync(string username, string password, CancellationToken token = default)
+    {
+        AuthPayload payload = new()
+        {
+            UserName = username,
+            Password = password
+        };
+        var payloadData = payload.Encode(Encoding.UTF8);
+        var basePack = CreateBasePackData(Constants.AUTH, (ulong)payloadData.Length);
+        await _socket.SendAsync(basePack, token);
+        await _socket.SendAsync(payloadData, token);
+    }
+
+
+    private async Task<TorrentResponse> ReadTorrentResponse(ulong length)
+    {
+        var result = await _pipe.Reader.ReadAtLeastAsync((int)length);
+        // only TorrentResponse
+        using var memory = MemoryPool<byte>.Shared.Rent((int)length);
+        result.Buffer.Slice(0, (int)length).CopyTo(memory.Memory.Span);
+        _pipe.Reader.AdvanceTo(result.Buffer.GetPosition((long)length));
+        var response = TorrentResponse.Decode(memory.Memory, Encoding.UTF8);
+        return response;
+    }
 
     private void HandshakeHandler(in BasePack pack)
     {
         // read handshake response
-        var result = _pipe.Reader.ReadAtLeastAsync((int)pack.Length)
-            .AsTask()
-            .ConfigureAwait(false)
-            .GetAwaiter()
-            .GetResult();
-        // only TorrentResponse
-        using var memory = MemoryPool<byte>.Shared.Rent((int)pack.Length);
-        result.Buffer.Slice(0, (int)pack.Length).CopyTo(memory.Memory.Span);
-        _pipe.Reader.AdvanceTo(result.Buffer.GetPosition((long)pack.Length));
-        var response = TorrentResponse.Decode(memory.Memory, Encoding.UTF8);
-        HandshakeCompleted = response.IsSuccess();
-        HandshakeComplete?.Invoke(this, new HandshakeCompleteEventArg(response.IsSuccess(), response.Error));
+        this.ReadTorrentResponse(pack.Length)
+            .ContinueWith(t =>
+            {
+                if (!t.IsCompletedSuccessfully) return;
+                HandshakeCompleted = t.Result.IsSuccess();
+                HandshakeComplete?.Invoke(this, new HandshakeCompleteEventArg(t.Result.IsSuccess(),
+                    (t.Result.Result & 0x7F_FF_FF_FF) == Constants.REQUIRE_AUTH_ERROR_CODE,
+                    t.Result.Error));
+            });
+    }
+
+    private void AuthenticationResponse(in BasePack pack)
+    {
+        // read auth response
+        this.ReadTorrentResponse(pack.Length)
+            .ContinueWith(t =>
+            {
+                if (!t.IsCompletedSuccessfully) return;
+                AuthenticationCompleted = t.Result.IsSuccess();
+                AuthenticationComplete?.Invoke(this,
+                    new AuthenticationCompleteEventArg(t.Result.IsSuccess(), t.Result.Error));
+            });
     }
 
     private void OnReceive(object? sender, SocketAsyncEventArgs e)

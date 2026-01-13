@@ -16,7 +16,7 @@ public static class Constants
     // CMD
     public const byte AUTH = 0x01;
 
-    public const byte AUTH_RESPONSE = 0x02;
+    public const byte AUTH_RESPONSE = 0x03;
 
     // length is 0, server will ignore length
     public const byte HANDSHAKE = 0x02;
@@ -32,6 +32,7 @@ public static class Constants
     /********************************/
     // handshake error
     public const int HANDSHAKE_ERROR_CODE = 0x10_00_01;
+
     // require Auth
     public const int REQUIRE_AUTH_ERROR_CODE = 0x10_00_02;
     public const int FAILURE_AUTH_ERROR_CODE = 0x10_00_03;

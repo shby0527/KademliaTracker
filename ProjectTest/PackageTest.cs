@@ -1,6 +1,4 @@
-﻿using System.Buffers.Binary;
-using System.Diagnostics;
-using System.Dynamic;
+﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using Umi.Dht.Control.Protocol;
@@ -78,5 +76,8 @@ public class PackageTest
     [Test]
     public void ArrayTest()
     {
+        char[] arr = "发弹发射打嘎".ToCharArray();
+        Array.Reverse(arr);
+        Assert.Warn($"Test arr {new string(arr)}");
     }
 }

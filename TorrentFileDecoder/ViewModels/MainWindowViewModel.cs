@@ -8,30 +8,33 @@ namespace TorrentFileDecoder.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase
 {
+    public required Window View { get; init; }
+
     [RelayCommand]
-    private async Task OpenViewTorrent(Window parent, CancellationToken token = default)
+    private async Task OpenViewTorrent(CancellationToken token = default)
     {
         ViewTorrent torrent = new()
         {
             DataContext = new ViewTorrentViewModel()
         };
 
-        await torrent.ShowDialog(parent);
+        await torrent.ShowDialog(View);
     }
 
 
     [RelayCommand]
-    private async Task OpenCommandWindows(Window parent, CancellationToken token = default)
+    private async Task OpenCommandWindows(CancellationToken token = default)
     {
-        Window dialog = new NetworkTorrentControl()
+        Window dialog = new NetworkTorrentControl();
+        dialog.DataContext = new NetworkTorrentControlViewModel()
         {
-            DataContext = new NetworkTorrentControlViewModel()
+            View = dialog
         };
-        await dialog.ShowDialog<int>(parent);
+        await dialog.ShowDialog<int>(View);
     }
 
     [RelayCommand]
-    private async Task OpenOtherWindows(Window parent, CancellationToken token = default)
+    private async Task OpenOtherWindows(CancellationToken token = default)
     {
         MessageBoxWindows dialog = new()
         {
@@ -41,6 +44,6 @@ public partial class MainWindowViewModel : ViewModelBase
                 Message = "暂时没有实现"
             }
         };
-        await dialog.ShowDialog<int>(parent);
+        await dialog.ShowDialog<int>(View);
     }
 }
