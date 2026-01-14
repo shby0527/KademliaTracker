@@ -149,7 +149,7 @@ public sealed class TorrentProtocol : IDisposable
                 if (!t.IsCompletedSuccessfully) return;
                 HandshakeCompleted = t.Result.IsSuccess();
                 HandshakeComplete?.Invoke(this, new HandshakeCompleteEventArg(t.Result.IsSuccess(),
-                    (t.Result.Result & 0x7F_FF_FF_FF) == Constants.REQUIRE_AUTH_ERROR_CODE,
+                    t.Result.ErrorCode() == Constants.REQUIRE_AUTH_ERROR_CODE,
                     t.Result.Error));
             });
     }

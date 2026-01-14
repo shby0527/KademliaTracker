@@ -76,8 +76,20 @@ public class PackageTest
     [Test]
     public void ArrayTest()
     {
-        char[] arr = "发弹发射打嘎".ToCharArray();
-        Array.Reverse(arr);
-        Assert.Warn($"Test arr {new string(arr)}");
+        MyStruct v = new MyStruct()
+        {
+            a = 0x123456789
+        };
+        Assert.Warn($"a1 is {v.a1}");
     }
+}
+
+[StructLayout(LayoutKind.Explicit)]
+struct MyStruct
+{
+    [FieldOffset(0)] public long a;
+    [FieldOffset(6)] public short a1;
+    [FieldOffset(4)] public short a2;
+    [FieldOffset(2)] public short a3;
+    [FieldOffset(0)] public short a4;
 }

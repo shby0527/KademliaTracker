@@ -3,8 +3,6 @@ using System.Collections.Concurrent;
 using System.Numerics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Org.BouncyCastle.Crypto;
-using Org.BouncyCastle.Crypto.Digests;
 using Org.BouncyCastle.Security;
 using Umi.Dht.Client.Bittorrent;
 using Umi.Dht.Client.Bittorrent.MsgPack;
@@ -34,6 +32,10 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
 
     private readonly ILogger<BitTorrentInfoHashPrivateTracker> _logger;
 
+    private readonly IDownloaderFactory? _downloaderFactory;
+
+    private IHashInfoDownloader? _downloader;
+
     private volatile bool _hasMetadataReceived = false;
 
     private TorrentFileInfo? _info;
@@ -56,6 +58,7 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         _scope = scope;
         _logger = logger;
         _storage = scope.ServiceProvider.GetService<ITorrentStorage>();
+        _downloaderFactory = scope.ServiceProvider.GetService<IDownloaderFactory>();
         _peerFactory = scope.ServiceProvider.GetRequiredService<IBittorrentPeerFactory>();
         _info = _storage?.Exists(btih);
         _hasMetadataReceived = _info is not null;
@@ -264,12 +267,28 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         _info = _storage?.Save(merged);
 
         _hasMetadataReceived = true;
+        // 清空所有缓存 
+        _metadataBuffers.Clear();
         _ = this.CloseAllPeerConnection()
             .ContinueWith(t => _logger.LogInformation("{s} finished", t.Status));
+        // 开启下载
+        if (_info.HasValue)
+        {
+            _downloader =
+                _downloaderFactory?.CreateDownloader(_info.Value, _btih, [.._activePeers, .._bittorrentPeers]);
+            _downloader?.ProgressChanged += DownloaderOnProgressChanged;
+            _downloader?.StartDownloadAsync()?.ContinueWith(t => _logger.LogInformation("begin start download"));
+        }
+
         if (_logger.IsEnabled(LogLevel.Information))
         {
             _logger.LogInformation("info dic is {dic}", _info);
         }
+    }
+
+    private void DownloaderOnProgressChanged(object? sender, BittorrentProgressEventArgs e)
+    {
+        // now none implement
     }
 
     private async Task CloseAllPeerConnection()
@@ -411,19 +430,9 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
                 while (first is not null)
                 {
                     var current = first;
-                    if (current.Value.IsConnected)
-                    {
-                        current.Value.Disconnect()
-                            .ConfigureAwait(false)
-                            .GetAwaiter()
-                            .OnCompleted(current.Value.Dispose);
-                    }
-                    else
-                    {
-                        current.Value.Dispose();
-                    }
-
+                    current.Value.Dispose();
                     first = first.Next;
+                    _activePeers.Remove(current);
                 }
             }
 
@@ -440,6 +449,7 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
             }
         }
 
+        _downloader?.Dispose();
         _semaphore.Dispose();
         _scope.Dispose();
     }
