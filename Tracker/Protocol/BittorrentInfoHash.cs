@@ -271,14 +271,6 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
         _metadataBuffers.Clear();
         _ = this.CloseAllPeerConnection()
             .ContinueWith(t => _logger.LogInformation("{s} finished", t.Status));
-        // 开启下载
-        if (_info.HasValue)
-        {
-            _downloader =
-                _downloaderFactory?.CreateDownloader(_info.Value, _btih, [.._activePeers, .._bittorrentPeers]);
-            _downloader?.ProgressChanged += DownloaderOnProgressChanged;
-            _downloader?.StartDownloadAsync()?.ContinueWith(t => _logger.LogInformation("begin start download"));
-        }
 
         if (_logger.IsEnabled(LogLevel.Information))
         {
@@ -288,7 +280,11 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
 
     private void DownloaderOnProgressChanged(object? sender, BittorrentProgressEventArgs e)
     {
-        // now none implement
+        var publishers = _scope.ServiceProvider.GetServices<IDownloadProgressPublisher>();
+        foreach (var publisher in publishers)
+        {
+            publisher.OnProgress(_btih, e);
+        }
     }
 
     private async Task CloseAllPeerConnection()
@@ -400,6 +396,92 @@ internal class BitTorrentInfoHashPrivateTracker : IBitTorrentInfoHash
     public TorrentDirectoryInfo TorrentDirectoryInfo => _hasMetadataReceived
         ? _info?.Info ?? throw new InvalidOperationException("info has not been received")
         : throw new InvalidOperationException("metadata has not been received");
+
+    public void StartDownload()
+    {
+        this.ThrowIfDisposed();
+        if (!_hasMetadataReceived || _info is null)
+        {
+            throw new InvalidOperationException("metadata has not been received");
+        }
+
+        lock (_syncPeer)
+        {
+            _downloader =
+                _downloaderFactory?.CreateDownloader(_info.Value, _btih, [.._bittorrentPeers, .._activePeers]);
+        }
+
+        _downloader?.ProgressChanged += DownloaderOnProgressChanged;
+        _downloader?.DownloadFinished += DownloaderOnDownloadFinished;
+        _downloader?.StartDownloadAsync()
+            .ContinueWith(_ =>
+            {
+                var publishers = _scope.ServiceProvider.GetServices<IDownloadProgressPublisher>();
+                foreach (var publisher in publishers)
+                {
+                    publisher.OnBegin(_btih);
+                }
+
+                _logger.LogInformation("download started");
+            });
+    }
+
+    private void DownloaderOnDownloadFinished(object? sender, EventArgs e)
+    {
+        var publishers = _scope.ServiceProvider.GetServices<IDownloadProgressPublisher>();
+        foreach (var publisher in publishers)
+        {
+            publisher.OnFinish(_btih);
+        }
+    }
+
+    public void PauseDownload()
+    {
+        this.ThrowIfDisposed();
+        _downloader?.PauseDownloadAsync()
+            .ContinueWith(_ =>
+            {
+                var publishers = _scope.ServiceProvider.GetServices<IDownloadProgressPublisher>();
+                foreach (var publisher in publishers)
+                {
+                    publisher.OnPause(_btih);
+                }
+
+                _logger.LogInformation("download paused");
+            });
+    }
+
+    public void ResumeDownload()
+    {
+        this.ThrowIfDisposed();
+        _downloader?.ResumeDownloadAsync()
+            .ContinueWith(_ =>
+            {
+                var publishers = _scope.ServiceProvider.GetServices<IDownloadProgressPublisher>();
+                foreach (var publisher in publishers)
+                {
+                    publisher.OnResume(_btih);
+                }
+
+                _logger.LogInformation("download resumed");
+            });
+    }
+
+    public void CancelDownload()
+    {
+        this.ThrowIfDisposed();
+        _downloader?.StopDownloadAsync()
+            .ContinueWith(_ =>
+            {
+                var publishers = _scope.ServiceProvider.GetServices<IDownloadProgressPublisher>();
+                foreach (var publisher in publishers)
+                {
+                    publisher.OnCancel(_btih);
+                }
+
+                _logger.LogInformation("download cancel");
+            });
+    }
 
     private void ThrowIfDisposed()
     {

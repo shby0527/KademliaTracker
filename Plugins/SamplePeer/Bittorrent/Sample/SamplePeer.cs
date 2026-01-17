@@ -65,7 +65,7 @@ public sealed class SamplePeer : IBittorrentPeer
     private readonly Memory<byte> _connectedPeerId;
 
     private long _metadataLength = 0;
-    
+
     public SamplePeer(IServiceProvider provider, IPeer peer,
         byte[] infoHash,
         byte[] peerId)
@@ -105,7 +105,7 @@ public sealed class SamplePeer : IBittorrentPeer
 
     public string Id { get; }
 
-    public ReadOnlySpan<byte> PeerId => _peerId.Span;
+    public ReadOnlyMemory<byte> PeerId => _peerId;
 
     public bool IsConnected { get; private set; }
 

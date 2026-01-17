@@ -147,9 +147,9 @@ public sealed class TorrentProtocol : IDisposable
             .ContinueWith(t =>
             {
                 if (!t.IsCompletedSuccessfully) return;
-                HandshakeCompleted = t.Result.IsSuccess();
-                HandshakeComplete?.Invoke(this, new HandshakeCompleteEventArg(t.Result.IsSuccess(),
-                    t.Result.ErrorCode() == Constants.REQUIRE_AUTH_ERROR_CODE,
+                HandshakeCompleted = t.Result.IsSuccess;
+                HandshakeComplete?.Invoke(this, new HandshakeCompleteEventArg(t.Result.IsSuccess,
+                    t.Result.ErrorCode == Constants.REQUIRE_AUTH_ERROR_CODE,
                     t.Result.Error));
             });
     }
@@ -161,9 +161,9 @@ public sealed class TorrentProtocol : IDisposable
             .ContinueWith(t =>
             {
                 if (!t.IsCompletedSuccessfully) return;
-                AuthenticationCompleted = t.Result.IsSuccess();
+                AuthenticationCompleted = t.Result.IsSuccess;
                 AuthenticationComplete?.Invoke(this,
-                    new AuthenticationCompleteEventArg(t.Result.IsSuccess(), t.Result.Error));
+                    new AuthenticationCompleteEventArg(t.Result.IsSuccess, t.Result.Error));
             });
     }
 

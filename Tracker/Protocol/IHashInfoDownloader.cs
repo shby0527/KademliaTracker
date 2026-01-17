@@ -27,6 +27,8 @@ public interface IHashInfoDownloader : IDisposable, IAsyncDisposable
 
     public event EventHandler<BittorrentProgressEventArgs> ProgressChanged;
 
+    public event EventHandler DownloadFinished;
+
     public ref TorrentDirectoryInfo Info { get; }
 
     Task StartDownloadAsync(CancellationToken token = default);

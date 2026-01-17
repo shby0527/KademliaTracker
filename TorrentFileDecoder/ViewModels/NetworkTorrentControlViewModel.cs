@@ -27,6 +27,8 @@ public partial class NetworkTorrentControlViewModel : ViewModelBase
 
     public required Window View { get; init; }
 
+    private Window? _authWindow = null;
+
 
     public string ConnectionStatus
     {
@@ -71,9 +73,35 @@ public partial class NetworkTorrentControlViewModel : ViewModelBase
         IsConnecting = true;
         _protocol = new TorrentProtocol(address, ServerEndpointModule.Port);
         _protocol.HandshakeComplete += ProtocolOnHandshakeComplete;
+        _protocol.AuthenticationComplete += ProtocolOnAuthenticationComplete;
         _protocol.Closed += ProtocolOnClosed;
         await _protocol.ConnectAsync(token);
         IsConnecting = false;
+    }
+
+    private void ProtocolOnAuthenticationComplete(object? sender, AuthenticationCompleteEventArg e)
+    {
+        IsAuthentication = e.Success;
+        if (!e.Success)
+        {
+            Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                var msgBox = new MessageBoxWindows()
+                {
+                    DataContext = new MessageBoxViewModel()
+                    {
+                        Title = "Error",
+                        Message = e.Message ?? ""
+                    },
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner
+                };
+                await msgBox.ShowDialog(View);
+            });
+        }
+        else
+        {
+            Dispatcher.UIThread.InvokeAsync(() => _authWindow?.Close(true));
+        }
     }
 
     private void ProtocolOnClosed(object? sender, EventArgs e)
@@ -125,6 +153,7 @@ public partial class NetworkTorrentControlViewModel : ViewModelBase
             {
                 _protocol?.Dispose();
                 _protocol = null;
+                _authWindow = null;
             }
         });
     }
@@ -134,7 +163,9 @@ public partial class NetworkTorrentControlViewModel : ViewModelBase
     {
         if (_protocol is not null)
         {
+            _authWindow = window;
             await _protocol.SystemAuthenticateAsync(UserInfoModule.Username, UserInfoModule.Password, token);
+            return;
         }
 
         var msgBox = new MessageBoxWindows()

@@ -24,4 +24,12 @@ public interface IBitTorrentInfoHash : IDisposable
     ValueTask BeginGetMetadata();
 
     TorrentDirectoryInfo TorrentDirectoryInfo { get; }
+
+    void StartDownload();
+
+    void PauseDownload();
+
+    void ResumeDownload();
+
+    void CancelDownload();
 }

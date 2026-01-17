@@ -9,7 +9,7 @@ public interface IBittorrentPeer : IPeer, IEquatable<IBittorrentPeer>, IEquatabl
 {
     string Id { get; }
 
-    ReadOnlySpan<byte> PeerId { get; }
+    ReadOnlyMemory<byte> PeerId { get; }
 
     bool IsConnected { get; }
 

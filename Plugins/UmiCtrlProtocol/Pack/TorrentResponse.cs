@@ -9,15 +9,10 @@ public readonly struct TorrentResponse
 
     public required string Error { get; init; }
 
-    public bool IsSuccess()
-    {
-        return (Result & 0x80_00_00_00) == 0;
-    }
+    public bool IsSuccess => (Result & 0x80_00_00_00) == 0;
 
-    public int ErrorCode()
-    {
-        return Result & 0x7F_FF_FF_FF;
-    }
+
+    public int ErrorCode => Result & 0x7F_FF_FF_FF;
 
     public ReadOnlyMemory<byte> Encode(Encoding encoding)
     {
