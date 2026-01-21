@@ -25,8 +25,8 @@ public class PackageTest
             Password = "a123",
         };
         var base64String = Convert.ToBase64String(authPayload.Encode(Encoding.ASCII).Span);
-        Debug.Print(base64String);
-        Debug.Assert("BQBhZG1pbgQAYTEyMw==" == base64String, "Encode Network Package Error");
+        Debug.WriteLine(base64String);
+        Assert.That(base64String, Is.EqualTo("BQBhZG1pbgQAYTEyMw=="), "Encode Network Package Error");
     }
 
     [Test]
@@ -34,9 +34,11 @@ public class PackageTest
     {
         var base64 = "BQBhZG1pbgQAYTEyMw==";
         var payload = AuthPayload.Decode(Convert.FromBase64String(base64), Encoding.ASCII);
-        Debug.Assert(payload.UserName == "admin");
-
-        Debug.Assert(payload.Password == "a123");
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(payload.UserName, Is.EqualTo("admin"), $"{payload.UserName} not equal admin");
+            Assert.That(payload.Password, Is.EqualTo("a123"), $"{payload.Password} not equal a123");
+        }
     }
 
 
@@ -45,7 +47,7 @@ public class PackageTest
     {
         var size = Marshal.SizeOf<BasePack>();
         Debug.Print("Base Package size is {0}", size);
-        Debug.Assert(size == 34);
+        Assert.That(size, Is.EqualTo(34), $"{size} not equal 34");
         var session = Utils.GenerateSession();
         BasePack basePack = new()
         {
@@ -57,7 +59,8 @@ public class PackageTest
         };
         var encode = basePack.Encode();
         BasePack.Decode(encode, out var result);
-        Debug.Assert(basePack.Session.SequenceEqual(result.Session));
+        Assert.That(basePack.Session, Is.EquivalentTo(result.Session),
+            $"{basePack.Session} not equal {result.Session}");
     }
 
     [Test]
@@ -68,12 +71,30 @@ public class PackageTest
             Result = TorrentResponse.GetErrorCode(false, 0x123456),
             Error = "abcde"
         };
-        Debug.Assert(!s.IsSuccess, "success compute error");
-        Debug.Assert(s.ErrorCode == 0x123456, "error code error");
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(s.IsSuccess, Is.False, "success compute error");
+            Assert.That(s.ErrorCode, Is.EqualTo(0x123456), "error code error");
+        }
+
         var data = s.Encode(Encoding.ASCII);
         var p = TorrentResponse.Decode(data, Encoding.ASCII);
-        Debug.Assert(p.Result == s.Result, "result code error");
-        Debug.Assert(p.Error == s.Error, "error message error");
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(p.Result, Is.EqualTo(s.Result), "result code error");
+            Assert.That(p.Error, Is.EqualTo(s.Error), "error message error");
+        }
+    }
+
+    private static IEnumerable<long> Fibonacci()
+    {
+        yield return 1;
+        yield return 1;
+        var next = Fibonacci().Zip(Fibonacci().Skip(1), (a, b) => a + b);
+        foreach (var l in next)
+        {
+            yield return l;
+        }
     }
 
     [Test]
@@ -86,6 +107,9 @@ public class PackageTest
         StringBuilder sb = new();
         sb.AppendJoin(',', fib().Take(10));
         Assert.Warn($"Result: {sb}");
+        sb.Clear();
+        sb.AppendJoin(',', Fibonacci().Take(10));
+        Assert.Warn($"Other Result: {sb}");
     }
 
     private delegate T SelfHandler<T>(SelfHandler<T> self);
@@ -101,5 +125,11 @@ public class PackageTest
         }
 
         Debug.Assert(input.ToString("b32") == sb.ToString());
+        Span<byte> data = stackalloc byte[20];
+        using var fs = File.OpenRead(@"/dev/random");
+        fs.ReadExactly(data);
+        sb.Clear();
+        sb.AppendJoin(',', data.ToArray());
+        Assert.Warn($"Result: {sb}");
     }
 }
