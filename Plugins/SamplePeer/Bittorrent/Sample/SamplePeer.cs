@@ -42,8 +42,6 @@ public sealed class SamplePeer : IBittorrentPeer
 
     private readonly Pipe _pipe;
 
-    private readonly Thread _processThread;
-
     private readonly Semaphore _semaphore = new(1, 1);
 
     private DateTimeOffset _aliveReceived = DateTimeOffset.UtcNow;
@@ -88,11 +86,7 @@ public sealed class SamplePeer : IBittorrentPeer
         _receiveEventArgs.Completed += this.OnSocketCompleted;
         _connectedPeerId = new byte[20];
         _peerId = peerId;
-        _processThread = new Thread(this.PackageProcess)
-        {
-            Name = $"{Convert.ToHexStringLower(_peerId.Span)}-Process",
-            IsBackground = true
-        };
+        this.PackageProcess().ContinueWith(_ => _logger.LogDebug("Read finished"));
     }
 
     public NodeInfo Node { get; }
@@ -155,7 +149,6 @@ public sealed class SamplePeer : IBittorrentPeer
         // 发送 handshake
         var send = await _client.SendAsync(encode.ToArray());
         _logger.LogDebug("send handshake to {address}:{port}, size is {size}", Address, Port, send);
-        _processThread.Start();
         _keepAliveTimer = new Timer(
             _ => this.KeepAlive()
                 .ContinueWith(t => _logger.LogTrace("timer keepalive finished, {t}", t.Status))
@@ -207,15 +200,18 @@ public sealed class SamplePeer : IBittorrentPeer
         var memory = writer.GetMemory(args.BytesTransferred);
         args.MemoryBuffer[..args.BytesTransferred].CopyTo(memory);
         writer.Advance(args.BytesTransferred);
-        var resultTask = writer.FlushAsync();
-        resultTask.GetAwaiter().OnCompleted(() => _logger.LogTrace("flash completed"));
-
-        // next receive
-        if (_client.ReceiveAsync(_receiveEventArgs)) return;
-        ThreadPool.QueueUserWorkItem(_ => this.OnSocketCompleted(_client, _receiveEventArgs));
+        writer.FlushAsync()
+            .AsTask()
+            .ContinueWith(t =>
+            {
+                if (t.IsCanceled || t.IsFaulted) return;
+                // next receive
+                if (_client.ReceiveAsync(_receiveEventArgs)) return;
+                this.OnSocketCompleted(_client, _receiveEventArgs);
+            });
     }
 
-    private void PackageProcess()
+    private async Task PackageProcess()
     {
         var reader = _pipe.Reader;
         while (!_finished)
@@ -225,17 +221,13 @@ public sealed class SamplePeer : IBittorrentPeer
                 _semaphore.WaitOne();
                 if (!_hasPeerHandshake)
                 {
-                    this.OnPeerHandshake(reader)
-                        .ConfigureAwait(false)
-                        .GetAwaiter()
-                        .GetResult();
+                    await this.OnPeerHandshake(reader)
+                        .ConfigureAwait(false);
                     continue;
                 }
 
-                this.OnOtherMessage(reader)
-                    .ConfigureAwait(false)
-                    .GetAwaiter()
-                    .GetResult();
+                await this.OnOtherMessage(reader)
+                    .ConfigureAwait(false);
             }
             catch (Exception e)
             {
@@ -254,7 +246,7 @@ public sealed class SamplePeer : IBittorrentPeer
             }
         }
 
-        reader.Complete();
+        await reader.CompleteAsync();
     }
 
 
@@ -734,8 +726,6 @@ public sealed class SamplePeer : IBittorrentPeer
             _semaphore.Dispose();
             _keepAliveTimer?.Dispose();
             _client.Dispose();
-            if (_processThread.ThreadState != ThreadState.Unstarted)
-                _processThread.Interrupt();
         }
         catch (Exception e)
         {
